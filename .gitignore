@@ -1,0 +1,22 @@
+# binary
+*.o
+syn
+*.exe
+
+# 3ds
+*.3dsx
+*.elf
+*.smdh
+/n3ds/src
+/n3ds/build
+
+# psvita
+/psvita/src
+/psvita/build
+
+# emcc
+/www/syn.html
+
+# android
+/android
+
