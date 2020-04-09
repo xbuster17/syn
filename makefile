@@ -3,8 +3,8 @@ JOBS=4
 EXEC = syn
 MAIN = src/main.c
 
-CCFLAG = -std=gnu99 -g -O3 -Wall -Wextra -Wno-psabi -Wno-implicit-fallthrough -ffast-math -funroll-loops -D _DEFAULT_SOURCE -D MG_DISABLE_MQTT -D MG_DISABLE_COAP
-CPPCFLAG = -std=gnu++11 -Wall -Wextra -g -O3 -D MG_DISABLE_MQTT -D MG_DISABLE_COAP
+CCFLAG = -std=gnu99 -g -O3 -Wall -Wextra -Wno-psabi -Wno-implicit-fallthrough -ffast-math -funroll-loops -D _DEFAULT_SOURCE
+CPPCFLAG = -std=gnu++11 -Wall -Wextra -g -O3
 
 LFLAG = $(CCFLAG)
 LCC=$(CC)
@@ -20,10 +20,8 @@ LIBS = -lm $(WIN_LIBS) \
        $(shell $(SDL2_CONFIG) --cflags --libs)\
 
 SRC = $(wildcard src/*.c)
-INC = $(wildcard src/*.h)
 OBJ = $(subst .c,.$(CROSSOBJ)o,$(subst $(MAIN),,$(SRC)))
 
-# $(SRC) $(INC) $(MAIN)
 all: @notify $(EXEC)
 
 $(EXEC): $(MAIN) $(OBJ)
@@ -77,12 +75,9 @@ rund:
 #______________________________________________________________________________
 # WINDOWS - mxe
 WIN_EXEC = $(EXEC).exe
-WIN_FLAG = CROSSOBJ=win. CROSS=i686-w64-mingw32.static- EXEC=$(WIN_EXEC) WIN_LIBS="-liphlpapi -lpthread -lwsock32 -DGLEW_STATIC -lGLEW"
+WIN_FLAG = CROSSOBJ=win. CROSS=i686-w64-mingw32.static- EXEC=$(WIN_EXEC) WIN_LIBS="-lpthread "
 # WIN_FLAG = CROSSOBJ=win CROSS=x86_64-w64-mingw32.static-
-# -liphlpapi is requiered for sdl_net to link properly
-# required libs: sdl2_* glew dlfcn-win32 png
-#  -lpthread -lwsock32 requiered for mongoose.c
-# -DOSG_LIBRARY_STATIC
+
 win:
 	make -j$(JOBS) $(WIN_FLAG) && strip -s $(WIN_EXEC)
 
@@ -173,8 +168,6 @@ droid: |
 
 	cd $(ANDROID_MK_FOLDER) && make
 	$(call color_green,"done")
-
-# libSDL2.so libSDL2_image.so libSDL2_mixer.so libSDL2_net.so libhidapi.so libSDL2_ttf.so
 
 # add libraries to compile on android here
 define ANDROID_MK_PREFIX
