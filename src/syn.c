@@ -52,7 +52,7 @@ void syn_init(syn* s, int sr){
 		for(int k=0; k<OSC_PER_TONE; k++){
 			s->tone[i].osc_env[k] = adsr_make(sr, .001, .001, 1, 0.001 , 0,0);
 
-			s->tone[i].osc[k] = i%OSC_MAX;
+			s->tone[i].osc[k] = 0;
 			tone_omix(s->tone+i, k, k==0? .25 : 0);
 			s->tone[i].pwm[k] = .5;
 			s->tone[i].mod_mat[k][k] =  1;
