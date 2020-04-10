@@ -18,7 +18,7 @@
 #include "adsr.h"
 
 #define SYN_TONES 12
-#define POLYPHONY 5
+#define POLYPHONY 6
 #define OSC_PER_TONE 6 // min 3
 #define VEL_OUT 4
 #define ARP_LEN 32
@@ -112,7 +112,7 @@ typedef struct {
 	float freq[POLYPHONY][SEQ_LEN];
 	uint8_t vel[POLYPHONY][SEQ_LEN];
 	uint8_t dur[SEQ_LEN];
-	noteid active[POLYPHONY];
+	noteid active[POLYPHONY]; // internal only, notes currently playing
 } syn_seq;
 
 

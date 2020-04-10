@@ -81,9 +81,9 @@ void sg_drawtex( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, u
 void sg_drawtext( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void sg_clear_area(int x, int y, int w, int h);
 
-char ptbox( int x, int y, sg_rect r);
-
-int isel(int i);
+char ptbox( int x, int y, sg_rect r); // point-box collision check
+int isel(int i); // select active instrument
+void astep(int step); // select active step
 /* -------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------- */
@@ -535,7 +535,6 @@ int main(int argc, char**argv){ (void)argv, (void)argc;
 int running = 1;
 int frame=0;
 sg_rect fillRect;
-// SDL_Rect fillRect;
 
 int _isel=0;
 int beat=0;
@@ -559,8 +558,6 @@ char gup_step_add=1;
 char gup_spb=1;
 char gup_mix=1;
 char gup_seq=1;
-// char gup_parm=1;
-// char gup_modm=1;
 char gup_osc=1;
 char gup_rec=1;
 char rec=0;
@@ -653,7 +650,6 @@ void gui_init(void){
 	mlatch_tex = sg_addtext("0");
 	rec_tex = sg_addtext("REC");
 // starting point of gui elements
-	// gseqh=(float)(screen_height)/(POLYPHONY*SYN_TONES)*POLYPHONY;
 	gseq_basey=giselh+2;
 	gosc_basey=gseq_basey+gseqh+8+2/*+knob_size*/;
 }
@@ -739,7 +735,6 @@ if((!mlatch || (mlatch == phony_latch_bpm)) && Mouse.b0){
 // bpm
 if(gup_bpm){
 	gup_bpm = 0;
-	// snprintf( bpm_text, 8+4+2, "bpm:%3.3f", G.syn->bpm);
 	snprintf( bpm_text, 8+4+2, "bpm:%3.3f", syn_bpm(G.syn, -1));
 	sg_modtext( bpm_tex, bpm_text);
 	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 66, 8);
@@ -830,7 +825,7 @@ if((!mlatch || mlatch==phony_latch_seq) && Mouse.b0){
 	sg_rect r = {0, gseq_basey, BASE_SCREEN_WIDTH, (POLYPHONY+1)*vlen+8, 0,0,0,0,0,0};
 	if(ptbox( Mouse.px, Mouse.py, r)){
 		if(Mouse.px < G.syn->seq[_isel].len * ((float)(BASE_SCREEN_WIDTH)/SEQ_LEN)){
-			step_sel = Mouse.px/((float)(BASE_SCREEN_WIDTH)/SEQ_LEN);
+			astep(Mouse.px/((float)(BASE_SCREEN_WIDTH)/SEQ_LEN));
 			mlatch = phony_latch_seq;
 		}
 	}
@@ -903,7 +898,6 @@ for(int i=0; i<OSC_PER_TONE; i++){
 int ampenv_basex = modm_basex + (knob_size+1)*OSC_PER_TONE+knob_size+1 +knob_size/2;
 for(int i=0; i<OSC_PER_TONE; i++){
 	for(int j=0; j<4; j++){
-		// if(j>i)break;
 		sg_rect r={j*(knob_size+1)+ampenv_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
 		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
 			switch(j){
@@ -912,7 +906,6 @@ for(int i=0; i<OSC_PER_TONE; i++){
 				case 2: mlatch = &(G.syn->tone[_isel].osc_env[i].s); mlatch_adsr=j; mlatch_adsr_osc=i; break;
 				case 3: mlatch = &(G.syn->tone[_isel].osc_env[i].r); mlatch_adsr=j; mlatch_adsr_osc=i; break;
 			}
-			// mlatch = &(G.syn->tone[_isel].osc_env[i].a);
 			mlatch_min=0.001;
 			mlatch_max= j==2? 1.0 : j==3? 10.0 : 3.0;
 			mlatch_factor= j==3? .1 : j==2? 0.01 : 0.05;
@@ -933,7 +926,6 @@ for(int i=0; i<OSC_PER_TONE; i++){
 		if(j>i)break;
 		sg_rect r={j*(knob_size+1)+modm_target_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
 		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-			// mlatch = syn_modm_addr( &(G.syn->tone[_isel].mod_mat), i, j);
 			if(G.syn->seq[_isel].modm[step_sel]==NULL){
 				seq_modm(G.syn->seq+_isel, &(G.syn->tone[_isel].mod_mat), step_sel);
 				gup_seq=1;
@@ -1004,7 +996,6 @@ for(int j=0; j<4; j++){
 			case 2: mlatch = &(G.syn->tone[_isel].pitch_env.s); mlatch_adsr=j; break;
 			case 3: mlatch = &(G.syn->tone[_isel].pitch_env.r); mlatch_adsr=j; break;
 		}
-		// mlatch = &(G.syn->tone[_isel].osc_env[i].a);
 		mlatch_min=0.001;
 		mlatch_max= j==2? 1.0 : j==3? 10.0 : 3.0;
 		mlatch_factor= j==3? .1 : j==2? 0.01 : 0.05;
@@ -1042,7 +1033,7 @@ if (kbget(SDLK_LEFT )){
 	if(key_delay==0){ key_delay=-6;
 		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
 			G.syn->seq[_isel].len=MAX(G.syn->seq[_isel].len-1, 1)      ;gup_seq=1;}
-		else step_sel= step_sel!=0 ? (step_sel-1) : G.syn->seq[_isel].len-1;
+		else astep( step_sel-1);
 	}
 }
 if (kbget(SDLK_RIGHT)){
@@ -1050,7 +1041,7 @@ if (kbget(SDLK_RIGHT)){
 	if(key_delay==0){ key_delay=-6;
 		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
 			G.syn->seq[_isel].len=MIN(G.syn->seq[_isel].len+1, SEQ_LEN);gup_seq=1;}
-		else step_sel= (step_sel+1) % G.syn->seq[_isel].len; ;
+		else astep( step_sel+1);
 	}
 }
 if (kbget(SDLK_UP   )){ kbset(SDLK_UP, 0);
@@ -1062,6 +1053,12 @@ if (kbget(SDLK_DOWN )){ kbset(SDLK_DOWN, 0);
 	if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
 		G.syn->seq[_isel].spb=MAX(G.syn->seq[_isel].spb-1, 1)      ;gup_spb=1;}
 	else if(step_add>0) {step_add--; gup_step_add=1;}
+}
+
+if(kbget(SDLK_DELETE)){
+	if(!(kbget(SDLK_RALT) || kbget(SDLK_LALT) || kbget(SDLK_ALTERASE)))
+		seq_anof(G.syn->seq+_isel, step_sel);
+	seq_modm(G.syn->seq+_isel, NULL, step_sel); gup_seq=1;
 }
 
 
@@ -1199,6 +1196,11 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case SDLK_RETURN: syn_pause(G.syn); break;
 				case SDLK_SPACE: rec=!rec; gup_rec=1; break;
 
+				case SDLK_HOME: astep(0); break;
+				case SDLK_END: astep(G.syn->seq[_isel].len-1); break;
+
+				case SDLK_INSERT: astep(step_sel + step_add); break;
+
 
 				case 'q': key_update('q', 1); break; //DO 4
 				case '2': key_update('2', 1); break;
@@ -1233,8 +1235,6 @@ syn_lock(G.syn, 1); // todo make a finer lock
 
 				case '[': testvelocity = CLAMP(testvelocity-.5, 0.0, 1.0); break;
 				case ']': testvelocity = CLAMP(testvelocity+.5, 0.0, 1.0); break;
-
-				case SDLK_DELETE: seq_anof(G.syn->seq+_isel, step_sel); seq_modm(G.syn->seq+_isel, NULL, step_sel); gup_seq=1; break;
 
 				default: break;
 			}
@@ -1275,13 +1275,12 @@ syn_lock(G.syn, 1); // todo make a finer lock
 			break;
 #endif // _3DS
 
-#if defined (_3DS) //_3DS
 
+#if defined (_3DS) //_3DS
 	case SDL_KEYUP:
 		if(e.key.keysym.sym==SDLK_RETURN) running=0;
 		if(e.key.keysym.sym==SDLK_a) syn_pause(G.syn);
 		break;
-
 #endif // _3DS
 
 		case SDL_JOYAXISMOTION:
@@ -1290,7 +1289,6 @@ syn_lock(G.syn, 1); // todo make a finer lock
 			break;
 		case SDL_JOYBUTTONUP:
 			break;
-
 
 
 	#ifndef _3DS
@@ -1336,12 +1334,9 @@ syn_lock(G.syn, 1); // todo make a finer lock
 						}
 					}
 				}
-			}
-	// tone_index(G.syn->tone, 1, 0, 30.0* e.motion.y/(float)screen_height);
-			break;
+			} break;
 
 		case SDL_MOUSEBUTTONDOWN:
-			// if(e.button.button != SDL_BUTTON_LEFT) break;
 			switch(e.button.button){
 				case SDL_BUTTON_LEFT:   Mouse.b0 = 1; break;
 				case SDL_BUTTON_RIGHT:  Mouse.b1 = 1; break;
@@ -1375,190 +1370,6 @@ syn_lock(G.syn, 0);
 }
 
 int sdl_event_watcher_3ds(const SDL_Event* e){ return sdl_event_watcher(NULL, (SDL_Event*)e); }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-void test_add_notes(void){
-// test secuencer
-G.syn->bpm=147.0;
-G.syn->seq[2].len = 16;
-for(int i=0; i<SEQ_LEN; i++){
-	if(!(i%4)) continue;
-	G.syn->seq[2].freq[0][i] = freqn(-9);
-	G.syn->seq[2].dur[i] =  0.5*255;
-	if((i%2))
-	G.syn->seq[2].dur[i] =  0.115*255;
-	// G.syn->seq[2].vel[0][i] =  1.0;
-}
-G.syn->seq[2].dur[14] =  1.0*255;
-G.syn->seq[2].freq[0][14] = freqn(-9);
-G.syn->seq[2].dur[15] = .9*255;
-G.syn->tone[2].gain = .15;
-G.syn->seq[2].freq[0][0] =   0;
-G.syn->seq[2].freq[0][4] =   0;
-G.syn->seq[2].freq[0][8] =   0;
-G.syn->seq[2].freq[0][12] =  0;
-
-G.syn->seq[2].freq[0][4] =   freqn(0);
-G.syn->seq[2].dur[4] =   .8;
-G.syn->seq[2].freq[0][12] =  freqn(0);
-G.syn->seq[2].dur[12] =   .8;
-for(int i=0; i<SEQ_LEN; i+=16){
-G.syn->seq[0].freq[0][i+0] =  freqn(-24-9);
-G.syn->seq[0].freq[0][i+4] =  freqn(-24-9);
-G.syn->seq[0].freq[0][i+8] =  freqn(-24-9);
-G.syn->seq[0].freq[0][i+12] = freqn(-24-9);
-G.syn->seq[0].vel[0][i+0] =  1.0;
-G.syn->seq[0].vel[0][i+4] =  1.0;
-G.syn->seq[0].vel[0][i+8] =  1.0;
-G.syn->seq[0].vel[0][i+12] = 1.0;
-
-G.syn->seq[0].dur[i+0] =  0.9*255;
-G.syn->seq[0].dur[i+4] =  0.9*255;
-G.syn->seq[0].dur[i+8] =  0.9*255;
-G.syn->seq[0].dur[i+12] = 0.9*255;
-
-G.syn->seq[1].freq[0][i+2+0] =  freqn(-24-9);
-G.syn->seq[1].freq[0][i+2+4] =  freqn(-24-9);
-G.syn->seq[1].freq[0][i+2+8] =  freqn(-24-9);
-G.syn->seq[1].freq[0][i+2+12] = freqn(-24-9);
-G.syn->seq[1].vel[0][i+2+0] =  0.0;
-G.syn->seq[1].vel[0][i+2+4] =  0.0;
-G.syn->seq[1].vel[0][i+2+8] =  0.0;
-G.syn->seq[1].vel[0][i+2+12] = 0.0;
-G.syn->seq[1].dur[i+2+0] =  0.99*255;
-G.syn->seq[1].dur[i+2+4] =  0.50*255;
-G.syn->seq[1].dur[i+2+8] =  0.99*255;
-G.syn->seq[1].dur[i+2+12] = 0.50*255;
-G.syn->seq[1].freq[0][i+1+2+0] =  freqn(-24-9+1);
-G.syn->seq[1].freq[0][i+1+2+4] =  freqn(-24-9+1);
-G.syn->seq[1].freq[0][i+1+2+8] =  freqn(-24-9+1);
-G.syn->seq[1].freq[0][i+1+2+12] = freqn(-24-9+1);
-G.syn->seq[1].vel[0][i+1+2+0] =  0.0;
-G.syn->seq[1].vel[0][i+1+2+4] =  0.0;
-G.syn->seq[1].vel[0][i+1+2+8] =  0.0;
-G.syn->seq[1].vel[0][i+1+2+12] = 0.0;
-G.syn->seq[1].dur[i+1+2+0] =  0.5*255;
-G.syn->seq[1].dur[i+1+2+4] =  0.5*255;
-G.syn->seq[1].dur[i+1+2+8] =  0.5*255;
-G.syn->seq[1].dur[i+1+2+12] = 0.5*255;
-}
-// printf("freqn(-24-9)=%f\n",freqn(-24-9));
-// for(int i=0; i<SEQ_LEN; i++){
-// 	G.syn->seq[0].freq[i%4][i] =  freqn(-24-9);
-// 	G.syn->seq[0].vel[0][i] =  255;
-// 	G.syn->seq[0].dur[i] =  i%2? 0.6*255 : 0.1*255;
-// }
-// G.syn->seq[0].len = 16;
-
-// G.syn->tone[5].gain=.2;
-
-//triplet test
-G.syn->seq[3].len=12;
-G.syn->seq[3].spb=3;
-G.syn->tone[3].gain=.052;
-for (int i = 0; i < 12; ++i){
-	if(!(i%3)) {
-		G.syn->seq[3].freq[0][i]= freqn(-9-i);
-	G.syn->seq[3].dur[i]= .75*255;
-	G.syn->seq[3].vel[0][i]= .9;
-	} else {
-		G.syn->seq[3].freq[0][i]= freqn(1+-9-(i%6));
-	G.syn->seq[3].dur[i]= .25*255;
-	G.syn->seq[3].vel[0][i]= .1;
-	}
-}
-// G.syn->tone[1].gain = .0;
-// G.syn->tone[2].gain = .0;
-G.syn->tone[3].gain = .2;
-G.syn->tone[4].gain = .2;
-G.syn->tone[5].gain = .2;
-G.syn->tone[6].gain = .2;
-
-//fm test
-// G.syn->tone[0].mod_mat[osc][mod]
-
-// tone_index(G.syn->tone, 1, 0, 2);
-// tone_frat(G.syn->tone, 1, 1.0);
-// tone_index(G.syn->tone, 2, 0, 2);
-// tone_frat(G.syn->tone, 2, 4.0);
-// tone_atk(G.syn->tone, 0,.0021);
-// tone_dec(G.syn->tone, 0,.21);
-// tone_dexp(G.syn->tone, 0,1);
-// tone_aexp(G.syn->tone, 0,1);
-// tone_patk(G.syn->tone, .002);
-
-// tone_sus(G.syn->tone, 0,0);
-// tone_atk(G.syn->tone, 1,.002);
-// tone_rel(G.syn->tone, 1,.01);
-// tone_atk(G.syn->tone, 2,.002);
-
-// tone_omix(G.syn->tone, 0, .0);
-// tone_omix(G.syn->tone, 1, .25);
-// tone_omix(G.syn->tone, 2, .0);
-// tone_omix(G.syn->tone, 3, .0);
-
-// tone_omix(G.syn->tone, 2, .25);
-// tone_omix(G.syn->tone, 3, .0);
-// tone_omix(G.syn->tone, 3, .2);
-// 1 4 8 12
-// G.syn->seq[0].freq[0][1+0] =  freqn(-24);
-// G.syn->seq[0].freq[0][1+4] =  freqn(-24);
-// G.syn->seq[0].freq[0][1+8] =  freqn(-24);
-// G.syn->seq[0].freq[0][1+12] = freqn(-24);
-// G.syn->seq[0].dur[1+0] =  1.0;
-// G.syn->seq[0].dur[1+4] =  1.0;
-// G.syn->seq[0].dur[1+8] =  1.0;
-// G.syn->seq[0].dur[1+12] = 1.0;
-
-}
-
-
-
-
-
-
-
-
 
 
 
@@ -1701,7 +1512,6 @@ void sg_show(void){
 	for(int i =0; i<sg_rect_count; i++){
 		update=1;
 		sg_rect t = sg_rects[i];
-		// draw_color( t.r/255.f, t.g/255.f, t.b/255.f , t.a/255.f );
 		if(t.tid >= 0){
 			draw_text( t.tid, t.x, t.y, t.ang, t.r, t.g, t.b, t.a);
 		} else {
@@ -1982,6 +1792,11 @@ void free_tex( sg_tex* t ){ assert(t);
 
 
 
+
+
+
+
+
 char ptbox( int x, int y, sg_rect r){
 	if(
 		x>r.x &&
@@ -1999,7 +1814,7 @@ int isel(int i){
 	char ret = _isel;
 	if(i>=0 && i<SYN_TONES) {
 		_isel = i;
-		step_sel=CLAMP(step_sel, 0 , G.syn->seq[i].len-1);
+		astep(step_sel);
 		gup_seq = 1;
 		gup_spb = 1;
 		gup_osc = 1;
@@ -2015,6 +1830,28 @@ int isel(int i){
 	}
 	return ret;
 }
+
+void astep(int step){
+	step = step % G.syn->seq[_isel].len;
+	if(step<0) step = G.syn->seq[_isel].len-1;
+	int prev_step = step_sel;
+	step_sel = step;
+	// check and update mlatch
+	if(mlatch > (float*)100 && G.syn->seq[_isel].modm[prev_step]!=NULL){
+		if(mlatch >= (float*)G.syn->seq[_isel].modm[prev_step] &&
+				mlatch <= syn_modm_addr(G.syn->seq[_isel].modm[prev_step], OSC_PER_TONE-1, OSC_PER_TONE-1 )){
+			if(G.syn->seq[_isel].modm[step_sel] == NULL){
+				seq_modm(G.syn->seq+_isel, G.syn->seq[_isel].modm[prev_step], step_sel);
+				gup_seq=1;
+			}
+			float prev_val = *mlatch;
+			mlatch = (float*) ((intptr_t)mlatch - (intptr_t)syn_modm_addr(G.syn->seq[_isel].modm[prev_step], 0,0));
+			mlatch = (float*) ((intptr_t)mlatch + (intptr_t)syn_modm_addr(G.syn->seq[_isel].modm[step_sel], 0,0));
+			*mlatch = prev_val;
+		}
+	}
+}
+
 
 
 
@@ -2115,7 +1952,7 @@ void key_update(char key, char on){
 			}
 		}
 
-		step_sel=(step_sel+step_add) % G.syn->seq[_isel].len;
+		astep(step_sel + step_add);
 		commit_count=0;
 		gup_seq=1;
 	}

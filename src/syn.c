@@ -570,6 +570,8 @@ void seq_nof(syn_seq* s, int pos, int voice){ assert(s);
 	pos = CLAMP(pos, 0, s->len);
 	voice = CLAMP(voice, 0, POLYPHONY);
 	s->freq[voice][pos] = 0;
+	s->dur[pos] = 0;
+	s->vel[voice][pos] = 0;
 }
 
 void seq_anof(syn_seq* s, int pos){ assert(s);
