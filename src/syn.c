@@ -11,8 +11,6 @@ void syn_init(syn* s, int sr){
 	s->bpm = 120;
 	s->seq_play = 0;
 	s->modm_lerp_mode = 1;
-	// s->seq_step_sel = 0;
-	// s->seq_tone_sel = 0;
 
 	for(int i =0; i<SYN_TONES; i++){
 		memset(s->tone[i].mod_mat, 0, sizeof(s->tone[i].mod_mat));
@@ -30,15 +28,7 @@ void syn_init(syn* s, int sr){
 		for (int j = 0; j < POLYPHONY; j++){
 			s->tone[i].pitch_env_amt = 0;
 
-			// s->tone[i].level[j] = 0.9; // temp
 			s->tone[i].vel[j] = 0;
-
-			// s->tone[i].glide = 100.0; // test
-			// s->tone[i].glide_freq_target = 0; // test
-			// s->tone[i].glide_t = 0;
-
-			// memset(s->note_history, 0 , sizeof(s->note_history));
-			// memset(s->note_history_i, 0 , sizeof(s->note_history_i));
 
 			s->tone[i].gate[j]=0;
 			s->tone[i].pitch_state[j]=0;
@@ -58,26 +48,15 @@ void syn_init(syn* s, int sr){
 
 		s->tone[i].voices=0;
 
-		s->tone[i].pitch_env = adsr_make(sr, .01,.1, 0 ,0.0050     ,.0,0/*,0.3, 0.0001*/);
+		s->tone[i].pitch_env = adsr_make(sr, .001, .001, 1, 0.001 , .0,0);
 		for(int k=0; k<OSC_PER_TONE; k++){
-			s->tone[i].osc_env[k] = adsr_make(sr, .02,.01,.6,0.101     ,0.0,0.0/*,0.3, 0.0001*/);
+			s->tone[i].osc_env[k] = adsr_make(sr, .001, .001, 1, 0.001 , 0,0);
 
 			s->tone[i].osc[k] = i%OSC_MAX;
-			tone_omix(s->tone+i, k, k==0? 1 : 0);
+			tone_omix(s->tone+i, k, k==0? .25 : 0);
 			s->tone[i].pwm[k] = .5;
-			// s->tone[i].phase[k] = 0;
-			// s->tone[i].freq_ratio[k] = 1;
-			// s->tone[i].fmindex[k] = k+1;
-			// s->tone[i].fmindex[k] = 0;
-
 			s->tone[i].mod_mat[k][k] =  1;
-			// for(int k2=0; k2<OSC_PER_TONE; k2++){
-			// 	s->tone[i].mod_mat[k][k2] = k==k2 ? 1: 0;
-			// }
 		}
-			// s->tone[i].fmindex[1] = 1;
-			// s->tone[i].freq_ratio[0] = 8;
-			// s->tone[i].freq_ratio[1] = 1.0;
 	}
 
 }
@@ -97,8 +76,6 @@ void syn_seq_init(syn_seq* s){
 	for (int i = 0; i < POLYPHONY; ++i){
 		s->active[i] = (noteid){-1,-1};
 	}
-	// memset(s->active, 1, sizeof(s->active));
-	// memset(s->active, 1, sizeof(noteid) * POLYPHONY);
 	s->spb=SEQ_STEP_PER_BEAT_DEF;
 	s->len=MIN(SEQ_LEN, 16);
 	s->time=0;
@@ -106,10 +83,8 @@ void syn_seq_init(syn_seq* s){
 
 	s->tone = NULL;
 	s->modm_target_step=-1;
-	// s->tone = malloc(sizeof(syn_tone*)*SEQ_LEN);
 	memset(s->modm, 0, sizeof(syn_mod_mat*)*SEQ_LEN);
 	s->modm_wait_loop=0;
-
 }
 
 
