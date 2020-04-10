@@ -155,15 +155,15 @@ void syn_seq_advance(syn* s, float secs){
 		switch(s->modm_lerp_mode){
 			case 0:
 				if( step != prev_step ){
-					if(s->seq[i].modm[prev_step] != NULL){
-						syn_modm_lerp(s, i, s->seq[i].modm[prev_step], 0);
+					if(s->seq[i].modm[step] != NULL){
+						syn_modm_lerp(s, i, s->seq[i].modm[step], 0);
 					}
 				}
 				break;
 			case 1:
 				if( step != prev_step ){
-					if(s->seq[i].modm[prev_step] != NULL){
-						syn_modm_lerp(s, i, s->seq[i].modm[prev_step], 100.0);
+					if(s->seq[i].modm[step] != NULL){
+						syn_modm_lerp(s, i, s->seq[i].modm[step], 100.0);
 					}
 				} break;
 			case 2:
