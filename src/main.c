@@ -613,6 +613,7 @@ int gmodm_basey;
 int gadsr_basex;
 int gadst_basey;
 
+int key_delay=-1;
 
 char gui_inited =0;
 void gui_init(void);
@@ -1036,17 +1037,21 @@ for(int j=0; j<4; j++){
 /* end GUI */
 /*----------------------------------------------------------------------------*/
 
-if (kbget(SDLK_LEFT )){ if(!(frame % 6)){
-	if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-		G.syn->seq[_isel].len=MAX(G.syn->seq[_isel].len-1, 1)      ;gup_seq=1;}
-	else step_sel= step_sel!=0 ? (step_sel-1) : G.syn->seq[_isel].len-1;
+if (kbget(SDLK_LEFT )){
+	key_delay++;
+	if(key_delay==0){ key_delay=-6;
+		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+			G.syn->seq[_isel].len=MAX(G.syn->seq[_isel].len-1, 1)      ;gup_seq=1;}
+		else step_sel= step_sel!=0 ? (step_sel-1) : G.syn->seq[_isel].len-1;
+	}
 }
-}
-if (kbget(SDLK_RIGHT)){ if(!(frame % 6)){
-	if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-		G.syn->seq[_isel].len=MIN(G.syn->seq[_isel].len+1, SEQ_LEN);gup_seq=1;}
-	else step_sel= (step_sel+1) % G.syn->seq[_isel].len; ;
-}
+if (kbget(SDLK_RIGHT)){
+	key_delay++;
+	if(key_delay==0){ key_delay=-6;
+		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+			G.syn->seq[_isel].len=MIN(G.syn->seq[_isel].len+1, SEQ_LEN);gup_seq=1;}
+		else step_sel= (step_sel+1) % G.syn->seq[_isel].len; ;
+	}
 }
 if (kbget(SDLK_UP   )){ kbset(SDLK_UP, 0);
 	if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
@@ -1155,6 +1160,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 		case SDL_KEYDOWN:
 			if(e.key.repeat) break;
 			kbstate[ e.key.keysym.scancode % kbstate_max ] = e.key.timestamp;
+			key_delay=-1;
 			// testkey+=1;
 			// peak/=2;
 			// testpitch=e.key.keysym.scancode;
