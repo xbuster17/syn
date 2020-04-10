@@ -1,10 +1,10 @@
 #if defined (ANDROID)
 	#include <SDL.h>
-	#include <SDL_mixer.h>
+	// #include <SDL_mixer.h>
 	#include <SDL_ttf.h>
 #elif !defined(_3DS)
 	#include <SDL2/SDL.h>
-	#include <SDL2/SDL_mixer.h>
+	// #include <SDL2/SDL_mixer.h>
 	#include <SDL2/SDL_ttf.h>
 #else
 	#include <3ds.h>
@@ -99,11 +99,6 @@ struct {
 	int format;
 	int samples;
 	int channels;
-	// freq     = 48000;
-	// format   = AUDIO_S16SYS;
-	// channels = 2;
-	// samples  = 256;
-	// G.auhave.callback = maincb;
 	SDL_Window* window;
 	SDL_Renderer* renderer;
 	int window_focus;
@@ -180,30 +175,6 @@ int getlongbuf_index(int i){
 	if(index<0 || index>=longbuf_len) printf("wrong index %i %i:%s\n", index, __LINE__, __func__);
 	return index;
 }
-
-
-
-
-
-// inline float saw(float f, float s){
-// 	float t = (float)(s)/G.auhave.freq;
-// 	// float p = 1.f/f;
-// 	// return 2*(t/p-floor(t/p+.5));
-// 	return fmodf(t*f,1)*2-1;
-// }
-// inline float tri(float f, float s){
-// 	return 2*fabs(saw(f,s))-1;
-// }
-// inline float sqr(float f, int s){
-// 	float t = (float)(s)/G.auhave.freq;
-// 	return ((int)(2*t*f)%2) *2 -1;
-// }
-
-// inline float pul(float f, int s, float d){
-// 	// float t = (float)(s)/G.auhave.freq;
-// 	return (sqr(f,s)>0 && saw(f,s)>1-d)? 1.0 : -1.0;
-// }
-
 
 
 
@@ -1099,6 +1070,7 @@ if (kbget(SDLK_DOWN )){ kbset(SDLK_DOWN, 0);
 		#ifdef __EMSCRIPTEN__
 			break;
 		#endif
+		SDL_Delay(16);
 	}
 
 	#ifdef __EMSCRIPTEN__
@@ -2020,7 +1992,6 @@ char ptbox( int x, int y, sg_rect r){
 int isel(int i){
 	char ret = _isel;
 	if(i>=0 && i<SYN_TONES) {
-		syn_anof(G.syn, _isel);
 		_isel = i;
 		step_sel=CLAMP(step_sel, 0 , G.syn->seq[i].len-1);
 		gup_seq = 1;
@@ -2037,6 +2008,8 @@ int isel(int i){
 int voice_count=0;
 float note_commit[POLYPHONY];
 int commit_count=0;
+int commit_step_begin=0;
+int commit_step_end=0;
 void key_update(char key, char on){
 	float target_freq=0;
 	if(on){
@@ -2104,16 +2077,31 @@ void key_update(char key, char on){
 		if(rec) voice_count=MAX(voice_count-1, 0);
 	}
 	if(on && commit_count<POLYPHONY && rec) {
+		if(commit_count == 0) commit_step_begin=step_sel;
 		note_commit[commit_count] = target_freq;
 		voice_count++;
 		commit_count++;
 	}
 	//commit
 	if(!on && voice_count==0 && rec){
-		seq_anof(G.syn->seq+_isel, step_sel);
-		for(int i=0; i<commit_count; i++){
-			seq_non(G.syn->seq+_isel, step_sel, note_commit[i], .9, .5);
+		commit_step_end = step_sel;
+		if(commit_step_begin != commit_step_end){
+			int tmp=MIN(commit_step_begin, commit_step_end);
+			commit_step_end=MAX(commit_step_end, commit_step_begin);
+			commit_step_begin=MIN(commit_step_begin, tmp);
+			for(int s=commit_step_begin; s<=commit_step_end; s++){
+				seq_anof(G.syn->seq+_isel, s);
+				for(int i=0; i<commit_count; i++){
+					seq_non(G.syn->seq+_isel, s, note_commit[i], .9, s<commit_step_end? 1.0 : .5);
+				}
+			}
+		} else {
+			seq_anof(G.syn->seq+_isel, step_sel);
+			for(int i=0; i<commit_count; i++){
+				seq_non(G.syn->seq+_isel, step_sel, note_commit[i], .9, .5);
+			}
 		}
+
 		step_sel=(step_sel+step_add) % G.syn->seq[_isel].len;
 		commit_count=0;
 		gup_seq=1;
