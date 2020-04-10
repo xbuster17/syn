@@ -2005,6 +2005,13 @@ int isel(int i){
 		gup_osc = 1;
 		gup_rec = 1;
 		mlatch = NULL;
+
+		for(int t=0; t<SYN_TONES; t++){
+			for(int p=0; p<POLYPHONY+40; p++){
+				syn_nof(G.syn, voices[t][p]);
+				voices[t][p] = (noteid){-1,-1};
+			}
+		}
 	}
 	return ret;
 }
@@ -2051,33 +2058,33 @@ void key_update(char key, char on){
 		}
 	} else {
 		switch(key){
-			case 'q': syn_nof(G.syn, voices[_isel][0]);  break;
-			case '2': syn_nof(G.syn, voices[_isel][1]);  break;
-			case 'w': syn_nof(G.syn, voices[_isel][2]);  break;
-			case '3': syn_nof(G.syn, voices[_isel][3]);  break;
-			case 'e': syn_nof(G.syn, voices[_isel][4]);  break;
-			case 'r': syn_nof(G.syn, voices[_isel][5]);  break;
-			case '5': syn_nof(G.syn, voices[_isel][6]);  break;
-			case 't': syn_nof(G.syn, voices[_isel][7]);  break;
-			case '6': syn_nof(G.syn, voices[_isel][8]);  break;
-			case 'y': syn_nof(G.syn, voices[_isel][9]);  break;
-			case '7': syn_nof(G.syn, voices[_isel][10]); break;
-			case 'u': syn_nof(G.syn, voices[_isel][11]); break;
-			case 'i': syn_nof(G.syn, voices[_isel][12]); break;
+			case 'q': syn_nof(G.syn, voices[_isel][0]     ); voices[_isel][0]     = (noteid){-1,-1}; break;
+			case '2': syn_nof(G.syn, voices[_isel][1]     ); voices[_isel][1]     = (noteid){-1,-1}; break;
+			case 'w': syn_nof(G.syn, voices[_isel][2]     ); voices[_isel][2]     = (noteid){-1,-1}; break;
+			case '3': syn_nof(G.syn, voices[_isel][3]     ); voices[_isel][3]     = (noteid){-1,-1}; break;
+			case 'e': syn_nof(G.syn, voices[_isel][4]     ); voices[_isel][4]     = (noteid){-1,-1}; break;
+			case 'r': syn_nof(G.syn, voices[_isel][5]     ); voices[_isel][5]     = (noteid){-1,-1}; break;
+			case '5': syn_nof(G.syn, voices[_isel][6]     ); voices[_isel][6]     = (noteid){-1,-1}; break;
+			case 't': syn_nof(G.syn, voices[_isel][7]     ); voices[_isel][7]     = (noteid){-1,-1}; break;
+			case '6': syn_nof(G.syn, voices[_isel][8]     ); voices[_isel][8]     = (noteid){-1,-1}; break;
+			case 'y': syn_nof(G.syn, voices[_isel][9]     ); voices[_isel][9]     = (noteid){-1,-1}; break;
+			case '7': syn_nof(G.syn, voices[_isel][10]    ); voices[_isel][10]    = (noteid){-1,-1}; break;
+			case 'u': syn_nof(G.syn, voices[_isel][11]    ); voices[_isel][11]    = (noteid){-1,-1}; break;
+			case 'i': syn_nof(G.syn, voices[_isel][12]    ); voices[_isel][12]    = (noteid){-1,-1}; break;
 
-			case 'z': syn_nof(G.syn, voices[_isel][13+0]);  break; //DO 3
-			case 's': syn_nof(G.syn, voices[_isel][13+1]);  break;
-			case 'x': syn_nof(G.syn, voices[_isel][13+2]);  break;
-			case 'd': syn_nof(G.syn, voices[_isel][13+3]);  break;
-			case 'c': syn_nof(G.syn, voices[_isel][13+4]);  break;
-			case 'v': syn_nof(G.syn, voices[_isel][13+5]);  break;
-			case 'g': syn_nof(G.syn, voices[_isel][13+6]);  break;
-			case 'b': syn_nof(G.syn, voices[_isel][13+7]);  break;
-			case 'h': syn_nof(G.syn, voices[_isel][13+8]);  break; //lab
-			case 'n': syn_nof(G.syn, voices[_isel][13+9]);  break; //la
-			case 'j': syn_nof(G.syn, voices[_isel][13+10]); break; //sib
-			case 'm': syn_nof(G.syn, voices[_isel][13+11]); break; //si
-			case ',': syn_nof(G.syn, voices[_isel][13+12]); break; //DO 4
+			case 'z': syn_nof(G.syn, voices[_isel][13+0]  ); voices[_isel][13+0]  = (noteid){-1,-1}; break; //DO 3
+			case 's': syn_nof(G.syn, voices[_isel][13+1]  ); voices[_isel][13+1]  = (noteid){-1,-1}; break;
+			case 'x': syn_nof(G.syn, voices[_isel][13+2]  ); voices[_isel][13+2]  = (noteid){-1,-1}; break;
+			case 'd': syn_nof(G.syn, voices[_isel][13+3]  ); voices[_isel][13+3]  = (noteid){-1,-1}; break;
+			case 'c': syn_nof(G.syn, voices[_isel][13+4]  ); voices[_isel][13+4]  = (noteid){-1,-1}; break;
+			case 'v': syn_nof(G.syn, voices[_isel][13+5]  ); voices[_isel][13+5]  = (noteid){-1,-1}; break;
+			case 'g': syn_nof(G.syn, voices[_isel][13+6]  ); voices[_isel][13+6]  = (noteid){-1,-1}; break;
+			case 'b': syn_nof(G.syn, voices[_isel][13+7]  ); voices[_isel][13+7]  = (noteid){-1,-1}; break;
+			case 'h': syn_nof(G.syn, voices[_isel][13+8]  ); voices[_isel][13+8]  = (noteid){-1,-1}; break; //lab
+			case 'n': syn_nof(G.syn, voices[_isel][13+9]  ); voices[_isel][13+9]  = (noteid){-1,-1}; break; //la
+			case 'j': syn_nof(G.syn, voices[_isel][13+10] ); voices[_isel][13+10] = (noteid){-1,-1}; break; //sib
+			case 'm': syn_nof(G.syn, voices[_isel][13+11] ); voices[_isel][13+11] = (noteid){-1,-1}; break; //si
+			case ',': syn_nof(G.syn, voices[_isel][13+12] ); voices[_isel][13+12] = (noteid){-1,-1}; break; //DO 4
 			default:break;
 		}
 		if(rec) voice_count=MAX(voice_count-1, 0);
