@@ -551,6 +551,14 @@ int16_t step_add_tex;
 int spb=0;
 char spb_text[16];
 int16_t spb_tex;
+// quit dialogue
+char* quitd_text = "Are you sure you want to QUIT?";
+char* quitd_text_no = "No! (Escape)";
+char* quitd_text_yes = "Yes (Enter)";
+int16_t quitd_tex;
+int16_t quitd_tex_yes;
+int16_t quitd_tex_no;
+char request_quit=0;
 
 /* main gui */
 char gup_bpm=1;
@@ -578,7 +586,11 @@ int16_t seq_step_tex;
 
 int16_t rec_tex;
 
+#ifndef __vita__
 #define knob_size 15
+#else
+#define knob_size 41
+#endif
 #define knob_thickness 2
 rgba8 knob_pixels[knob_size*knob_size];
 
@@ -641,6 +653,9 @@ void gui_init(void){
 				knob_pixels[i*knob_size+j].c = 0x000000FF;
 		}
 	}
+	quitd_tex = sg_addtext(quitd_text);
+	quitd_tex_yes = sg_addtext(quitd_text_yes);
+	quitd_tex_no = sg_addtext(quitd_text_no);
 	seq_step_tex = sg_addtext("^");
 	knob_tex = sg_addtex(knob_pixels, knob_size, knob_size);
 
@@ -1023,6 +1038,21 @@ for(int j=0; j<4; j++){
 	sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env_amt * 310/15, 255,255,155,255);
 }
 
+// quit dialogue
+if(request_quit){
+	int border = 10;
+	int sx=0,sy=0, syesx=0;
+	sg_texsize( quitd_tex, &sx, &sy );
+	sg_rect r = {BASE_SCREEN_WIDTH/2 - sx/2 - border, BASE_SCREEN_HEIGHT/2 - sy/2 - border, sx + border*2, sy*2 + border*2, 255,0,0,255, 0,0};
+	sg_clear_area(r.x, r.y, r.w, r.h);
+	sg_drawtex( quitd_tex, r.x+border, r.y+border, 0, 255,150+100*tri((frame%60)/60.0),150+100*tri((frame%60)/60.0),255);
+	sg_drawtex( quitd_tex_no,  r.x+border, r.y+sy+border, 0, 255,255,255,255);
+	sg_texsize( quitd_tex_yes, &syesx, NULL );
+	sg_drawtex( quitd_tex_yes, r.x+r.w-syesx-border, r.y+sy+border, 0, 155,0,0,255);
+	sg_drawperim( r );
+	if(kbget(SDLK_ESCAPE)) { request_quit=0; sg_clear_area(r.x, r.y, r.w, r.h); }
+	if(kbget(SDLK_RETURN)) running=0;
+}
 
 /*----------------------------------------------------------------------------*/
 /* end GUI */
@@ -1128,7 +1158,14 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 // must lock syn when activating notes from main thread
 syn_lock(G.syn, 1); // todo make a finer lock
 	switch(e.type){
-		case SDL_QUIT: running=0; break;
+		// case SDL_QUIT: running=0; break;
+		case SDL_QUIT:
+			if(!request_quit){
+				kbset(SDLK_ESCAPE, 0);
+				kbset(SDLK_RETURN, 0);
+				request_quit =1;
+			}
+			break;
 
 #ifndef _3DS
 		case SDL_WINDOWEVENT:
@@ -1138,7 +1175,12 @@ syn_lock(G.syn, 1); // todo make a finer lock
 					screen_width = e.window.data1;
 					screen_height= e.window.data2;
 					break;
-				case SDL_WINDOWEVENT_CLOSE: running=0;
+				case SDL_WINDOWEVENT_CLOSE:
+					if(!request_quit){
+						kbset(SDLK_ESCAPE, 0);
+						kbset(SDLK_RETURN, 0);
+						request_quit =1;
+					}
 					break;
 				case SDL_WINDOWEVENT_ENTER:
 				case SDL_WINDOWEVENT_TAKE_FOCUS:
@@ -1163,9 +1205,14 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case SDLK_MENU: syn_pause(G.syn); break;
 
 				case SDLK_ESCAPE:
-					running=0;
-					seq_mode = !seq_mode;
-					syn_anof(G.syn, _isel); isel(0); break;
+					if(!request_quit){
+						kbset(SDLK_ESCAPE, 0);
+						kbset(SDLK_RETURN, 0);
+						request_quit =1;
+					}
+					break;
+					// seq_mode = !seq_mode;
+					// syn_anof(G.syn, _isel); isel(0); break;
 
 				case SDLK_F1:  isel(0); break;
 				case SDLK_F2:  isel(1); break;
@@ -1408,6 +1455,7 @@ int sg_tex_capacity = 16; // starting capacity
 
 
 static int sg_font_size = 12;
+// static int sg_font_size = 22;
 
 #ifndef _3DS
 static TTF_Font* sg_font=NULL;
@@ -1540,8 +1588,8 @@ void sg_rcol(sg_rect* s, float r, float g, float b, float a){ assert(s); s->r=r*
 void sg_texsize( int16_t tex, int* x, int* y){
 	if(!sg_was_init) return;
 	assert( tex < sg_tex_count);
-	*x = sg_texs[tex].w;
-	*y = sg_texs[tex].h;
+	if(x) *x = sg_texs[tex].w;
+	if(y) *y = sg_texs[tex].h;
 
 }
 
