@@ -172,7 +172,7 @@ char seq_mode = 0;
 int getlongbuf_index(int i){
 	int index = (i + sample-G.auhave.samples)% longbuf_len;
 	if(index<0) index = index+longbuf_len;
-	if(index<0 || index>=longbuf_len) printf("wrong index %i %i:%s\n", index, __LINE__, __func__);
+	if(index<0 || index>=longbuf_len) SDL_Log("wrong index %i %i:%s\n", index, __LINE__, __func__);
 	return index;
 }
 
@@ -251,7 +251,7 @@ void mix_cb(int chan, void *stream, int len, void *udata){
 void audevlist(void){
 	int n=SDL_GetNumAudioDevices(0);
 	for (int i = 0; i < n; ++i)
-		printf("%i:%s\n", i, SDL_GetAudioDeviceName(i,0));
+		SDL_Log("%i:%s\n", i, SDL_GetAudioDeviceName(i,0));
 }
 #else
 void audevlist(void){}
@@ -292,8 +292,8 @@ struct {
 	char b0,b1,b2; // left, right, middle
 	int wx,wy; // wheel
 	int wtx,wty; // wheel total
-	uint16_t px,py;
-	int16_t dx,dy;
+	int32_t px,py;
+	int32_t dx,dy;
 } Mouse;
 
 #define MAX_FINGER 11
@@ -332,26 +332,27 @@ int init_systems(void){
 		screen_height=240;
 	#endif
 
+	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	#ifdef ANDROID
-		wflag = SDL_WINDOW_RESIZABLE|SDL_WINDOW_FULLSCREEN;
-		SDL_DisplayMode mode;
-		SDL_GetDisplayMode(0, 0, &mode);
-		screen_width=mode.w;
-		screen_height=mode.h;
+		wflag = SDL_WINDOW_BORDERLESS|SDL_WINDOW_RESIZABLE|SDL_WINDOW_FULLSCREEN;
+		// SDL_DisplayMode mode;
+		// SDL_GetDisplayMode(0, 0, &mode);
+		// screen_width=mode.w;
+		// screen_height=mode.h;
 	#endif
 
 
 #ifndef _3DS
-	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 0);
 
-	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+
 	if((G.window = SDL_CreateWindow( wname, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-			screen_width, screen_height, wflag)) == NULL){
-		printf("E:%s\n", SDL_GetError());
+			// screen_width, screen_height, wflag)) == NULL){
+			BASE_SCREEN_WIDTH, BASE_SCREEN_HEIGHT, wflag)) == NULL){
+		SDL_Log("E:%s\n", SDL_GetError());
 		return 1;
 	}
 	if((G.renderer = SDL_CreateRenderer( G.window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE)) == NULL){
-		printf("E:%s\n", SDL_GetError());
+		SDL_Log("E:%s\n", SDL_GetError());
 		return 1;
 	}
 
@@ -365,14 +366,15 @@ int init_systems(void){
 	SDL_LockSurface(G.screen);
 	G.pixel_format = G.screen->format;
 	SDL_UnlockSurface(G.screen);
-	printf("%i\n", G.pixel_format->BitsPerPixel);
+	SDL_Log("%i\n", G.pixel_format->BitsPerPixel);
 	SDL_EnableKeyRepeat(0,0);
 	joystick = SDL_JoystickOpen(0);
 
 #endif // _3DS
 
 	G.screen_tex = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, screen_width, screen_height);
-
+	SDL_SetRenderTarget(G.renderer, G.screen_tex);
+	sg_clear();
 #if 1 // sdl audio
 	G.auwant.freq     = sample_rate;
 	// G.auwant.format   = AUDIO_F32SYS;
@@ -384,18 +386,18 @@ int init_systems(void){
 	#ifndef _3DS
 		G.audev = SDL_OpenAudioDevice(NULL, 0, &G.auwant, &G.auhave, 0/*SDL_AUDIO_ALLOW_FORMAT_CHANGE*/);
 		if(G.audev == 0){
-			printf("E:%s\n", SDL_GetError());
+			SDL_Log("E:%s\n", SDL_GetError());
 			SDL_Delay(50000);
 			return 1;
 		} else {
 			G.audio_running = 1;
 			SDL_PauseAudioDevice(G.audev, 0);
 		}
-	printf("sizeof syn: %li\n", sizeof(syn) );
+	SDL_Log("sizeof syn: %li\n", sizeof(syn) );
 	#else //_3DS
 		G.audev = SDL_OpenAudio(&G.auwant, &G.auhave);
 		if(G.audev < 0){
-			printf("E:%s\n", SDL_GetError());
+			SDL_Log("E:%s\n", SDL_GetError());
 			SDL_Delay(50000);
 			return 1;
 		} else {
@@ -403,9 +405,9 @@ int init_systems(void){
 			SDL_PauseAudio(0);
 		}
 		// SDL_UnlockAudio();
-		printf("auhave:\nfreq:%i\nchann:%i\nsil:%i\nsamples:%hi\nsize:%li\n", G.auhave.freq, G.auhave.channels, G.auhave.silence, G.auhave.samples, G.auhave.size);
+		SDL_Log("auhave:\nfreq:%i\nchann:%i\nsil:%i\nsamples:%hi\nsize:%li\n", G.auhave.freq, G.auhave.channels, G.auhave.silence, G.auhave.samples, G.auhave.size);
 
-	printf("sizeof syn: %i\n", sizeof(syn) );
+	SDL_Log("sizeof syn: %i\n", sizeof(syn) );
 	#endif
 
 #else // sdl mixer
@@ -438,11 +440,11 @@ int init_systems(void){
 		memset(kbstate, 0, kbstate_max*sizeof(int32_t));
 	}
 
-	#ifdef _3DS
-		SDL_SetEventFilter(sdl_event_watcher_3ds);
-	#else
-		SDL_SetEventFilter(sdl_event_watcher, NULL);
-	#endif
+	// #ifdef _3DS
+	// 	SDL_SetEventFilter(sdl_event_watcher_3ds);
+	// #else
+	// 	SDL_SetEventFilter(sdl_event_watcher, NULL);
+	// #endif
 
 	return 0;
 
@@ -599,8 +601,8 @@ float mlatch_factor = 0.0; // mouse delta is multiplied by this
 float mlatch_max = 0.0; // mlatch get's clamped to these
 float mlatch_min = 0.0;
 char mlatch_v=0; // use vertical delta
-char mlatch_adsr=-1; // if differ from *latch, call adsr updaters
-char mlatch_adsr_osc;
+signed char mlatch_adsr=-1; // call adsr updaters
+char mlatch_adsr_osc=0;
 char mlatch_adsr_pitch=0; // set to 1 if latched to pitch envelope
 
 
@@ -613,14 +615,14 @@ float* phony_latch_bpm = (float*)3;
 
 int giselh=16; // height of intrument select / instrument vumeter
 int giselw=16;
-int gseq_basey;
+int gseq_basey=0;
 int gseqh=32;
-int gosc_basey;
+int gosc_basey=0;
 int gosch=16;
-int gmodm_basex;
-int gmodm_basey;
-int gadsr_basex;
-int gadst_basey;
+int gmodm_basex=0;
+int gmodm_basey=0;
+int gadsr_basex=0;
+int gadst_basey=0;
 
 int key_delay=-1;
 
@@ -643,14 +645,19 @@ void gui_init(void){
 			float y=(j-knob_size/2);
 			knob_pixels[i*knob_size+j].c = 0;
 			float r=sqrt(x*x+y*y);
-			if(((y)==0) && (x>0))
-				knob_pixels[i*knob_size+j].c = 0xFFFFFFFF;
-			else if(r<knob_size/2-1)
-				knob_pixels[i*knob_size+j].c = 0x22222222;
-			if(r>knob_size/2-knob_thickness && r<knob_size/2 )
-				knob_pixels[i*knob_size+j].c = 0xFFFFFFFF;
-			if(r==knob_size/2-knob_thickness)
+
+			if(r<=knob_size/2 + 1) // extra bit of black
 				knob_pixels[i*knob_size+j].c = 0x000000FF;
+
+			if(((y)==0) && (x>0)) // line
+				knob_pixels[i*knob_size+j].c = 0xFFFFFFFF;
+
+			else if(r<knob_size/2-1) // background
+				knob_pixels[i*knob_size+j].c = 0x22222222;
+
+			if(r>knob_size/2-knob_thickness && r<knob_size/2 ) // circle
+				knob_pixels[i*knob_size+j].c = 0xFFFFFFFF;
+
 		}
 	}
 	quitd_tex = sg_addtext(quitd_text);
@@ -716,7 +723,7 @@ for(int i=0; i<SYN_TONES; i++){
 	r.y=0;
 	r.w=giselw;
 	r.h=giselh;
-	if((!mlatch || mlatch==phony_latch_isel) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r))
+	if((!mlatch || (mlatch==phony_latch_isel)) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r))
 		{isel(i); mlatch=phony_latch_isel;}
 	r.r=(_isel==i) * 255;
 	r.g=55-r.r;
@@ -737,12 +744,12 @@ for(int i=0; i<SYN_TONES; i++){
 }
 
 // bpm mouse
-if((!mlatch || (mlatch == phony_latch_bpm)) && Mouse.b0){
+if( (!mlatch || (mlatch == phony_latch_bpm)) && Mouse.b0){
 	sg_rect r = {giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 70, 16, 0,0,0,0, 0,0};
-	if((mlatch==phony_latch_bpm) || ptbox(Mouse.px, Mouse.py, r)){
+	if((mlatch == phony_latch_bpm) || ptbox(Mouse.px, Mouse.py, r)){
 		int shift = kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT);
 		float bpm = syn_bpm(G.syn, -1);
-		syn_bpm(G.syn, bpm + Mouse.dx/( shift? 100.0 : 1 ));
+		syn_bpm(G.syn, bpm + ((float)Mouse.dx)/( shift? 100.0 : 10.0 ));
 		gup_bpm=1;
 		mlatch = phony_latch_bpm;
 	}
@@ -789,7 +796,7 @@ if(gup_rec){
 	sg_drawtex( rec_tex, giselw*(SYN_TONES+SYN_TONES/8)+4+76, 8, 0, 255*rec, 55, 55, 255);
 }
 {
-	sg_rect r={giselw*(SYN_TONES+SYN_TONES/8)+4+76, 8, 40, 16, 0,0,0,0, 0,0};
+	sg_rect r={giselw*(SYN_TONES+SYN_TONES/8)+4+76, 0, 40, 16, 0,0,0,0, 0,0};
 	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
 		Mouse.b0=0;
 		gup_rec=1;
@@ -835,7 +842,7 @@ if(gup_seq){
 	}
 }
 //seq mouse selection
-if((!mlatch || mlatch==phony_latch_seq) && Mouse.b0){
+if((!mlatch || (mlatch==phony_latch_seq)) && Mouse.b0){
 	float vlen = (float)(gseqh)/(POLYPHONY+1);
 	sg_rect r = {0, gseq_basey, BASE_SCREEN_WIDTH, (POLYPHONY+1)*vlen+8, 0,0,0,0,0,0};
 	if(ptbox( Mouse.px, Mouse.py, r)){
@@ -1091,6 +1098,20 @@ if(kbget(SDLK_DELETE)){
 	seq_modm(G.syn->seq+_isel, NULL, step_sel); gup_seq=1;
 }
 
+if(kbget(SDLK_EQUALS)){
+	if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)){
+		kbset(SDLK_EQUALS, 0);
+		testoctave++;
+	}
+}
+if(kbget(SDLK_MINUS)){
+	if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)){
+		kbset(SDLK_MINUS, 0);
+		testoctave--;
+	}
+}
+// case '-': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) testoctave--; break;
+// case '=': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) testoctave++; break;
 
 
 
@@ -1141,9 +1162,11 @@ if(kbget(SDLK_DELETE)){
 /*----------------------------------------------------------------------------*/
 
 void input_update(void){
-	Mouse.dx=Mouse.dy=0;
-	Mouse.wx=Mouse.wy=0;
-	SDL_PumpEvents();
+	Mouse.dx=0;Mouse.dy=0;
+	Mouse.wx=0;Mouse.wy=0;
+	// SDL_PumpEvents();
+	SDL_Event e;
+	while(SDL_PollEvent(&e)) sdl_event_watcher(NULL, &e);
 }
 int32_t kbget(SDL_Keycode k){
 	return kbstate[SDL_GetScancodeFromKey(k) % kbstate_max];
@@ -1249,6 +1272,13 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case '7': key_update('7', 1); break; //sib
 				case 'u': key_update('u', 1); break; //si
 				case 'i': key_update('i', 1); break; //do 5
+				case '9': key_update('9', 1); break;
+				case 'o': key_update('o', 1); break;
+				case '0': key_update('0', 1); break;
+				case 'p': key_update('p', 1); break;
+				case '[': key_update('[', 1); break;
+				case '=': if(!(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT))) key_update('=', 1); break;
+				case ']': key_update(']', 1); break;
 
 				case 'z': key_update('z', 1); break; //do 3
 				case 's': key_update('s', 1); break;
@@ -1263,12 +1293,13 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case 'j': key_update('j', 1); break; //sib
 				case 'm': key_update('m', 1); break; //si
 				case ',': key_update(',', 1); break; //do 4
+				case 'l': key_update('l', 1); break;
+				case '.': key_update('.', 1); break;
+				case ';': key_update(';', 1); break;
+				case '/': key_update('/', 1); break;
 
-				case '-': testoctave--; testpitch=0; break;
-				case '=': testoctave++; testpitch=0; break;
-
-				case '[': testvelocity = CLAMP(testvelocity-.5, 0.0, 1.0); break;
-				case ']': testvelocity = CLAMP(testvelocity+.5, 0.0, 1.0); break;
+				// case '[': testvelocity = CLAMP(testvelocity-.5, 0.0, 1.0); break;
+				// case ']': testvelocity = CLAMP(testvelocity+.5, 0.0, 1.0); break;
 
 				default: break;
 			}
@@ -1289,7 +1320,14 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case 'y': key_update('y', 0); break;
 				case '7': key_update('7', 0); break;
 				case 'u': key_update('u', 0); break;
-				case 'i': key_update('i', 0); break;
+				case 'i': key_update('i', 0); break; // do 5
+				case '9': key_update('9', 0); break;
+				case 'o': key_update('o', 0); break;
+				case '0': key_update('0', 0); break;
+				case 'p': key_update('p', 0); break;
+				case '[': key_update('[', 0); break;
+				case '=': key_update('=', 0); break;
+				case ']': key_update(']', 0); break;
 
 				case 'z': key_update('z', 0); break; //do 3
 				case 's': key_update('s', 0); break;
@@ -1304,6 +1342,10 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case 'j': key_update('j', 0); break; //sib
 				case 'm': key_update('m', 0); break; //si
 				case ',': key_update(',', 0); break; //do 4
+				case 'l': key_update('l', 0); break;
+				case '.': key_update('.', 0); break;
+				case ';': key_update(';', 0); break;
+				case '/': key_update('/', 0); break;
 				default:break;
 			}
 			break;
@@ -1326,15 +1368,15 @@ syn_lock(G.syn, 1); // todo make a finer lock
 
 
 	#ifndef _3DS
-		case SDL_FINGERDOWN:
-			voices[5][13+12+1]=syn_non(G.syn, 5, 3 -12+12*testoctave, testvelocity);
+		// case SDL_FINGERDOWN:
+		// 	voices[5][13+12+1]=syn_non(G.syn, 5, 3 -12+12*testoctave, testvelocity);
 
-		case SDL_FINGERMOTION:
+		// case SDL_FINGERMOTION:
 
-		case SDL_FINGERUP:
-			syn_nof(G.syn, voices[5][13+12+1]);
+		// case SDL_FINGERUP:
+		// 	syn_nof(G.syn, voices[5][13+12+1]);
 
-			break;
+		// 	break;
 #endif // _3DS
 
 	//mouse
@@ -1375,6 +1417,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case SDL_BUTTON_LEFT:   Mouse.b0 = 1; break;
 				case SDL_BUTTON_RIGHT:  Mouse.b1 = 1; break;
 				case SDL_BUTTON_MIDDLE: Mouse.b2 = 1; break;
+				default: break;
 			} break;
 
 		case SDL_MOUSEBUTTONUP:
@@ -1382,6 +1425,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case SDL_BUTTON_LEFT:   Mouse.b0 = 0; break;
 				case SDL_BUTTON_RIGHT:  Mouse.b1 = 0; break;
 				case SDL_BUTTON_MIDDLE: Mouse.b2 = 0; break;
+				default: break;
 			}
 			mlatch=NULL;
 			mlatch_adsr=-1;
@@ -1467,7 +1511,7 @@ static C2D_Font sg_font;
 
 //backend functions
 //void draw_target( char ); // 3ds only 0 for top screen, 1 for bottom
-void draw_color( float r,float g,float b,float a);
+void draw_color( uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void draw_fill_rect( sg_rect );
 void draw_rect( sg_rect );
 void draw_show( void ); // commit to screen
@@ -1495,7 +1539,7 @@ void sg_init(void){
 		SDL_RWops* ttffile = SDL_RWFromMem( elm_data, sizeof(elm_data) );
 		sg_font = TTF_OpenFontRW(ttffile, 1/*close file when done*/, sg_font_size);
 		if(!sg_font) {
-			printf("[FONT]:%s", TTF_GetError());
+			SDL_Log("[FONT]:%s", TTF_GetError());
 			exit(1);
 #else
 		sg_font = C2D_FontLoadFromMem(elbcfnt_data, sizeof(elbcfnt_data));
@@ -1527,7 +1571,7 @@ void sg_quit(void){
 
 void sg_clear(void){
 	if(!sg_was_init) sg_init();
-	draw_color(0,0,0,1);
+	draw_color(0,0,0,255);
 	draw_clear();
 }
 
@@ -1687,6 +1731,8 @@ void sg_drawtext( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, 
 void draw_show( void ){
 	#ifndef _3DS
 		SDL_SetRenderTarget(G.renderer, NULL);
+		sg_clear();
+
 		SDL_RenderCopy(G.renderer, G.screen_tex, NULL, NULL);
 		SDL_RenderPresent(G.renderer);
 		SDL_SetRenderTarget(G.renderer, G.screen_tex);
@@ -1697,7 +1743,7 @@ void draw_show( void ){
 	#endif
 }
 
-void draw_color( float r,float g,float b,float a){
+void draw_color( uint8_t r,uint8_t g,uint8_t b,uint8_t a){
 	#ifndef _3DS
 		SDL_SetRenderDrawColor(G.renderer, r,g,b,a);
 	#else
@@ -1752,6 +1798,8 @@ void draw_tex( uint16_t tid, int x, int y, float ang, uint8_t r, uint8_t g, uint
 		SDL_Rect dst = {x, y, sg_texs[tid].w, sg_texs[tid].h};
 		SDL_SetTextureColorMod( sg_texs[tid].sdltid, r,g,b );
 		SDL_SetTextureAlphaMod( sg_texs[tid].sdltid, a );
+		// SDL_Point center = {((float)sg_texs[tid].w)/2.0, ((float)sg_texs[tid].h)/2.0};
+		// SDL_RenderCopyEx(G.renderer, sg_texs[tid].sdltid, NULL, &dst, ang, &center, 0);
 		SDL_RenderCopyEx(G.renderer, sg_texs[tid].sdltid, NULL, &dst, ang, NULL, 0);
 	#else
 	#endif
@@ -1908,24 +1956,37 @@ void key_update(char key, char on){
 			case '5': target_freq=-3 +12*testoctave; voices[_isel][6]=syn_non(G.syn, _isel, -3 +12*testoctave, testvelocity); break;
 			case 't': target_freq=-2 +12*testoctave; voices[_isel][7]=syn_non(G.syn, _isel, -2 +12*testoctave, testvelocity); break;
 			case '6': target_freq=-1 +12*testoctave; voices[_isel][8]=syn_non(G.syn, _isel, -1 +12*testoctave, testvelocity); break; //lab
-			case 'y': target_freq= 0 +12*testoctave; voices[_isel][9]=syn_non(G.syn, _isel, 0  +12*testoctave, testvelocity); break; //la
+			case 'y': target_freq= 0 +12*testoctave; voices[_isel][9]=syn_non(G.syn, _isel,  0 +12*testoctave, testvelocity); break; //la
 			case '7': target_freq= 1 +12*testoctave; voices[_isel][10]=syn_non(G.syn, _isel, 1 +12*testoctave, testvelocity); break; //sib
 			case 'u': target_freq= 2 +12*testoctave; voices[_isel][11]=syn_non(G.syn, _isel, 2 +12*testoctave, testvelocity); break; //si
 			case 'i': target_freq= 3 +12*testoctave; voices[_isel][12]=syn_non(G.syn, _isel, 3 +12*testoctave, testvelocity); break; //do 5
+			case '9': target_freq= 4 +12*testoctave; voices[_isel][13]=syn_non(G.syn, _isel, 4 +12*testoctave, testvelocity); break;
+			case 'o': target_freq= 5 +12*testoctave; voices[_isel][14]=syn_non(G.syn, _isel, 5 +12*testoctave, testvelocity); break;
+			case '0': target_freq= 6 +12*testoctave; voices[_isel][15]=syn_non(G.syn, _isel, 6 +12*testoctave, testvelocity); break;
+			case 'p': target_freq= 7 +12*testoctave; voices[_isel][16]=syn_non(G.syn, _isel, 7 +12*testoctave, testvelocity); break;
+			case '[': target_freq= 8 +12*testoctave; voices[_isel][17]=syn_non(G.syn, _isel, 8 +12*testoctave, testvelocity); break;
+			case '=': target_freq= 9 +12*testoctave; voices[_isel][18]=syn_non(G.syn, _isel, 9 +12*testoctave, testvelocity); break;
+			case ']': target_freq= 10+12*testoctave; voices[_isel][19]=syn_non(G.syn, _isel, 10+12*testoctave, testvelocity); break;
 
-			case 'z': target_freq=-9 -12+12*testoctave; voices[_isel][13+0]=syn_non(G.syn, _isel, -9 -12+12*testoctave, testvelocity); break; //do 3
-			case 's': target_freq=-8 -12+12*testoctave; voices[_isel][13+1]=syn_non(G.syn, _isel, -8 -12+12*testoctave, testvelocity); break;
-			case 'x': target_freq=-7 -12+12*testoctave; voices[_isel][13+2]=syn_non(G.syn, _isel, -7 -12+12*testoctave, testvelocity); break;
-			case 'd': target_freq=-6 -12+12*testoctave; voices[_isel][13+3]=syn_non(G.syn, _isel, -6 -12+12*testoctave, testvelocity); break;
-			case 'c': target_freq=-5 -12+12*testoctave; voices[_isel][13+4]=syn_non(G.syn, _isel, -5 -12+12*testoctave, testvelocity); break;
-			case 'v': target_freq=-4 -12+12*testoctave; voices[_isel][13+5]=syn_non(G.syn, _isel, -4 -12+12*testoctave, testvelocity); break;
-			case 'g': target_freq=-3 -12+12*testoctave; voices[_isel][13+6]=syn_non(G.syn, _isel, -3 -12+12*testoctave, testvelocity); break;
-			case 'b': target_freq=-2 -12+12*testoctave; voices[_isel][13+7]=syn_non(G.syn, _isel, -2 -12+12*testoctave, testvelocity); break;
-			case 'h': target_freq=-1 -12+12*testoctave; voices[_isel][13+8]=syn_non(G.syn, _isel, -1 -12+12*testoctave, testvelocity); break; //lab
-			case 'n': target_freq= 0 -12+12*testoctave; voices[_isel][13+9]=syn_non(G.syn, _isel, 0  -12+12*testoctave, testvelocity); break; //la
-			case 'j': target_freq= 1 -12+12*testoctave; voices[_isel][13+10]=syn_non(G.syn, _isel, 1 -12+12*testoctave, testvelocity); break; //sib
-			case 'm': target_freq= 2 -12+12*testoctave; voices[_isel][13+11]=syn_non(G.syn, _isel, 2 -12+12*testoctave, testvelocity); break; //si
-			case ',': target_freq= 3 -12+12*testoctave; voices[_isel][13+12]=syn_non(G.syn, _isel, 3 -12+12*testoctave, testvelocity); break; //do 4
+			case 'z': target_freq=-9 -12+12*testoctave; voices[_isel][20+0]=syn_non(G.syn, _isel, -9 -12+12*testoctave, testvelocity); break; //do 3
+			case 's': target_freq=-8 -12+12*testoctave; voices[_isel][20+1]=syn_non(G.syn, _isel, -8 -12+12*testoctave, testvelocity); break;
+			case 'x': target_freq=-7 -12+12*testoctave; voices[_isel][20+2]=syn_non(G.syn, _isel, -7 -12+12*testoctave, testvelocity); break;
+			case 'd': target_freq=-6 -12+12*testoctave; voices[_isel][20+3]=syn_non(G.syn, _isel, -6 -12+12*testoctave, testvelocity); break;
+			case 'c': target_freq=-5 -12+12*testoctave; voices[_isel][20+4]=syn_non(G.syn, _isel, -5 -12+12*testoctave, testvelocity); break;
+			case 'v': target_freq=-4 -12+12*testoctave; voices[_isel][20+5]=syn_non(G.syn, _isel, -4 -12+12*testoctave, testvelocity); break;
+			case 'g': target_freq=-3 -12+12*testoctave; voices[_isel][20+6]=syn_non(G.syn, _isel, -3 -12+12*testoctave, testvelocity); break;
+			case 'b': target_freq=-2 -12+12*testoctave; voices[_isel][20+7]=syn_non(G.syn, _isel, -2 -12+12*testoctave, testvelocity); break;
+			case 'h': target_freq=-1 -12+12*testoctave; voices[_isel][20+8]=syn_non(G.syn, _isel, -1 -12+12*testoctave, testvelocity); break; //lab
+			case 'n': target_freq= 0 -12+12*testoctave; voices[_isel][20+9]=syn_non(G.syn, _isel,  0 -12+12*testoctave, testvelocity); break; //la
+			case 'j': target_freq= 1 -12+12*testoctave; voices[_isel][20+10]=syn_non(G.syn, _isel, 1 -12+12*testoctave, testvelocity); break; //sib
+			case 'm': target_freq= 2 -12+12*testoctave; voices[_isel][20+11]=syn_non(G.syn, _isel, 2 -12+12*testoctave, testvelocity); break; //si
+			case ',': target_freq= 3 -12+12*testoctave; voices[_isel][20+12]=syn_non(G.syn, _isel, 3 -12+12*testoctave, testvelocity); break; //do 4
+			case 'l': target_freq= 4 -12+12*testoctave; voices[_isel][20+13]=syn_non(G.syn, _isel, 4 -12+12*testoctave, testvelocity); break;
+			case '.': target_freq= 5 -12+12*testoctave; voices[_isel][20+14]=syn_non(G.syn, _isel, 5 -12+12*testoctave, testvelocity); break;
+			case ';': target_freq= 6 -12+12*testoctave; voices[_isel][20+15]=syn_non(G.syn, _isel, 6 -12+12*testoctave, testvelocity); break;
+			case '/': target_freq= 7 -12+12*testoctave; voices[_isel][20+16]=syn_non(G.syn, _isel, 7 -12+12*testoctave, testvelocity); break;
+
+
 			default: break;
 		}
 	} else {
@@ -1942,21 +2003,32 @@ void key_update(char key, char on){
 			case 'y': syn_nof(G.syn, voices[_isel][9]     ); voices[_isel][9]     = (noteid){-1,-1}; break;
 			case '7': syn_nof(G.syn, voices[_isel][10]    ); voices[_isel][10]    = (noteid){-1,-1}; break;
 			case 'u': syn_nof(G.syn, voices[_isel][11]    ); voices[_isel][11]    = (noteid){-1,-1}; break;
-			case 'i': syn_nof(G.syn, voices[_isel][12]    ); voices[_isel][12]    = (noteid){-1,-1}; break;
+			case 'i': syn_nof(G.syn, voices[_isel][12]    ); voices[_isel][12]    = (noteid){-1,-1}; break; // do5
+			case '9': syn_nof(G.syn, voices[_isel][13]    ); voices[_isel][13]    = (noteid){-1,-1}; break;
+			case 'o': syn_nof(G.syn, voices[_isel][14]    ); voices[_isel][14]    = (noteid){-1,-1}; break;
+			case '0': syn_nof(G.syn, voices[_isel][15]    ); voices[_isel][15]    = (noteid){-1,-1}; break;
+			case 'p': syn_nof(G.syn, voices[_isel][16]    ); voices[_isel][16]    = (noteid){-1,-1}; break;
+			case '[': syn_nof(G.syn, voices[_isel][17]    ); voices[_isel][17]    = (noteid){-1,-1}; break;
+			case '=': syn_nof(G.syn, voices[_isel][18]    ); voices[_isel][18]    = (noteid){-1,-1}; break;
+			case ']': syn_nof(G.syn, voices[_isel][19]    ); voices[_isel][19]    = (noteid){-1,-1}; break;
 
-			case 'z': syn_nof(G.syn, voices[_isel][13+0]  ); voices[_isel][13+0]  = (noteid){-1,-1}; break; //do 3
-			case 's': syn_nof(G.syn, voices[_isel][13+1]  ); voices[_isel][13+1]  = (noteid){-1,-1}; break;
-			case 'x': syn_nof(G.syn, voices[_isel][13+2]  ); voices[_isel][13+2]  = (noteid){-1,-1}; break;
-			case 'd': syn_nof(G.syn, voices[_isel][13+3]  ); voices[_isel][13+3]  = (noteid){-1,-1}; break;
-			case 'c': syn_nof(G.syn, voices[_isel][13+4]  ); voices[_isel][13+4]  = (noteid){-1,-1}; break;
-			case 'v': syn_nof(G.syn, voices[_isel][13+5]  ); voices[_isel][13+5]  = (noteid){-1,-1}; break;
-			case 'g': syn_nof(G.syn, voices[_isel][13+6]  ); voices[_isel][13+6]  = (noteid){-1,-1}; break;
-			case 'b': syn_nof(G.syn, voices[_isel][13+7]  ); voices[_isel][13+7]  = (noteid){-1,-1}; break;
-			case 'h': syn_nof(G.syn, voices[_isel][13+8]  ); voices[_isel][13+8]  = (noteid){-1,-1}; break; //lab
-			case 'n': syn_nof(G.syn, voices[_isel][13+9]  ); voices[_isel][13+9]  = (noteid){-1,-1}; break; //la
-			case 'j': syn_nof(G.syn, voices[_isel][13+10] ); voices[_isel][13+10] = (noteid){-1,-1}; break; //sib
-			case 'm': syn_nof(G.syn, voices[_isel][13+11] ); voices[_isel][13+11] = (noteid){-1,-1}; break; //si
-			case ',': syn_nof(G.syn, voices[_isel][13+12] ); voices[_isel][13+12] = (noteid){-1,-1}; break; //do 4
+			case 'z': syn_nof(G.syn, voices[_isel][20+0]  ); voices[_isel][20+0]  = (noteid){-1,-1}; break; //do 3
+			case 's': syn_nof(G.syn, voices[_isel][20+1]  ); voices[_isel][20+1]  = (noteid){-1,-1}; break;
+			case 'x': syn_nof(G.syn, voices[_isel][20+2]  ); voices[_isel][20+2]  = (noteid){-1,-1}; break;
+			case 'd': syn_nof(G.syn, voices[_isel][20+3]  ); voices[_isel][20+3]  = (noteid){-1,-1}; break;
+			case 'c': syn_nof(G.syn, voices[_isel][20+4]  ); voices[_isel][20+4]  = (noteid){-1,-1}; break;
+			case 'v': syn_nof(G.syn, voices[_isel][20+5]  ); voices[_isel][20+5]  = (noteid){-1,-1}; break;
+			case 'g': syn_nof(G.syn, voices[_isel][20+6]  ); voices[_isel][20+6]  = (noteid){-1,-1}; break;
+			case 'b': syn_nof(G.syn, voices[_isel][20+7]  ); voices[_isel][20+7]  = (noteid){-1,-1}; break;
+			case 'h': syn_nof(G.syn, voices[_isel][20+8]  ); voices[_isel][20+8]  = (noteid){-1,-1}; break; //lab
+			case 'n': syn_nof(G.syn, voices[_isel][20+9]  ); voices[_isel][20+9]  = (noteid){-1,-1}; break; //la
+			case 'j': syn_nof(G.syn, voices[_isel][20+10] ); voices[_isel][20+10] = (noteid){-1,-1}; break; //sib
+			case 'm': syn_nof(G.syn, voices[_isel][20+11] ); voices[_isel][20+11] = (noteid){-1,-1}; break; //si
+			case ',': syn_nof(G.syn, voices[_isel][20+12] ); voices[_isel][20+12] = (noteid){-1,-1}; break; //do 4
+			case 'l': syn_nof(G.syn, voices[_isel][20+13] ); voices[_isel][20+13] = (noteid){-1,-1};  break;
+			case '.': syn_nof(G.syn, voices[_isel][20+14] ); voices[_isel][20+14] = (noteid){-1,-1};  break;
+			case ';': syn_nof(G.syn, voices[_isel][20+15] ); voices[_isel][20+15] = (noteid){-1,-1};  break;
+			case '/': syn_nof(G.syn, voices[_isel][20+16] ); voices[_isel][20+16] = (noteid){-1,-1};  break;
 			default:break;
 		}
 		if(rec) voice_count=MAX(voice_count-1, 0);
