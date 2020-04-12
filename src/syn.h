@@ -113,6 +113,7 @@ typedef struct {
 	uint8_t vel[POLYPHONY][SEQ_LEN];
 	uint8_t dur[SEQ_LEN];
 	noteid active[POLYPHONY]; // internal only, notes currently playing
+	char mute;
 } syn_seq;
 
 
@@ -161,6 +162,7 @@ typedef struct {
 	// test note history for mono mode
 	// float note_history[SYN_TONES][HISTORY_LEN];
 	// int8_t note_history_i[SYN_TONES];
+	// syn_seq* song[64];
 } syn;
 
 void syn_init(syn* s, int sr);
@@ -213,6 +215,7 @@ short seq_len(syn_seq* s, short len);
 short seq_spb(syn_seq* s, short spb); // step per beat
 
 char seq_isgate(syn_seq* s, int voice);
+int seq_mute(syn_seq* s, int mute); // 1: mute, 0:unmute, <1 query
 
 // copies the last _count_ samples into dst
 void syn_read(syn*, float* dst, int count, int channel); //channel: 0=left, 1=right
@@ -220,8 +223,8 @@ float syn_rms(syn*);
 float syn_rms_time(syn*, float ms); // ms<0 to avoid setting. clamps
 
 // set a tone as transform target to be linearly interpolated over time
-void syn_tone_lerp(syn*, int tone, syn_tone* target, float mstime); // mstime<=0 to set instantly
-void seq_tone(syn_seq*, syn_tone* target, int step);
+// void syn_tone_lerp(syn*, int tone, syn_tone* target, float mstime); // mstime<=0 to set instantly
+// void seq_tone(syn_seq*, syn_tone* target, int step);
 
 void seq_modm(syn_seq*, syn_mod_mat*, int step);
 void seq_unload(syn_seq*);

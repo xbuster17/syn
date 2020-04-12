@@ -48,7 +48,7 @@
 
 static int screen_width =BASE_SCREEN_WIDTH;
 static int screen_height=BASE_SCREEN_HEIGHT;
-int testoctave=0;
+int octave=0;
 
 /* -------------------------------------------------------------------------- */
 /* use this api for graphics */
@@ -104,6 +104,8 @@ struct {
 	int window_focus;
 	syn* syn;
 	SDL_Texture* screen_tex;
+	float time; // seconds
+	float dt;
 } G;
 #else
 
@@ -453,8 +455,6 @@ int init_systems(void){
 
 
 
-void test_add_notes(void);
-int testtext=0;
 // int SDL_main(int argc, char**argv){ (void)argv, (void)argc;
 
 void main_loop(void);
@@ -541,6 +541,9 @@ sg_rect fillRect;
 int _isel=0;
 int beat=0;
 int pbeat=0;
+float tap_tempo = -1;
+int tap_tempo_key = SDLK_KP_MINUS;
+float tap_tempo_min_bpm = 20.0; // will cancel tap_tempo if resulting bpm would be lower than this
 
 int step_sel=0;
 char bpm_text[16];
@@ -691,7 +694,8 @@ void gui_init(void){
 
 
 
-
+double _time=0;
+double _prev_time=0;
 
 /*----------------------------------------------------------------------------*/
 /*main loop*/
@@ -699,8 +703,14 @@ void gui_init(void){
 void main_loop(void){
 	if(!gui_inited) gui_init();
 
+	_time = SDL_GetPerformanceCounter();
 
 	while(running){
+		_prev_time = _time;
+		_time = SDL_GetPerformanceCounter();
+		G.dt = (float)((_time - _prev_time)*1000.0 / (double)SDL_GetPerformanceFrequency() )/1000.f;
+		G.time += G.dt;
+
 		input_update();
 
 		beat = G.syn->seq[0].step/4;
@@ -726,19 +736,31 @@ for(int i=0; i<SYN_TONES; i++){
 	if((!mlatch || (mlatch==phony_latch_isel)) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r))
 		{isel(i); mlatch=phony_latch_isel;}
 	r.r=(_isel==i) * 255;
-	r.g=55-r.r;
-	r.b=255;
+	r.g=seq_mute(G.syn->seq+i, -1)? 55: 55-r.r;
+	r.b=seq_mute(G.syn->seq+i, -1)? 55: 255;
 	r.a=255;
 	isel_padding+=giselw;
 	sg_drawperim(r);
+	// VUmeter
+	// r.x++;
+	// r.y=1;
+	// r.h=MIN(G.syn->tone[i].vupeakl * giselh, giselh-2);
+	// sg_rcol(&r, MIN(G.syn->tone[i].vupeakl, 1.0), MAX(1-G.syn->tone[i].vupeakl, 0),0,1);
+	// r.w=r.w/2-1;
+	// sg_drawrect(r);
+	// r.x+=r.w;
+	// r.h=MIN(G.syn->tone[i].vupeakr * giselh, giselh-2);
+	// sg_rcol(&r, MIN(G.syn->tone[i].vupeakr, 1.0), MAX(1-G.syn->tone[i].vupeakr, 0),0,1);
+	// sg_drawrect(r);
 	r.x++;
-	r.y=1;
-	r.h=MIN(G.syn->tone[i].vupeakl * giselh, giselh-2);
+	r.w=r.w/2-2;
+	r.y=giselh - (G.syn->tone[i].vupeakl * giselh)-1;
+	r.h=giselh - r.y-1;
 	sg_rcol(&r, MIN(G.syn->tone[i].vupeakl, 1.0), MAX(1-G.syn->tone[i].vupeakl, 0),0,1);
-	r.w=r.w/2-1;
 	sg_drawrect(r);
-	r.x+=r.w;
-	r.h=MIN(G.syn->tone[i].vupeakr * giselh, giselh-2);
+	r.x=r.x+r.w+2;
+	r.y=giselh - (G.syn->tone[i].vupeakr * giselh)-1;
+	r.h=giselh - r.y-1;
 	sg_rcol(&r, MIN(G.syn->tone[i].vupeakr, 1.0), MAX(1-G.syn->tone[i].vupeakr, 0),0,1);
 	sg_drawrect(r);
 }
@@ -749,7 +771,7 @@ if( (!mlatch || (mlatch == phony_latch_bpm)) && Mouse.b0){
 	if((mlatch == phony_latch_bpm) || ptbox(Mouse.px, Mouse.py, r)){
 		int shift = kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT);
 		float bpm = syn_bpm(G.syn, -1);
-		syn_bpm(G.syn, bpm + ((float)Mouse.dx)/( shift? 100.0 : 10.0 ));
+		syn_bpm(G.syn, bpm + ((float)Mouse.dx)/( shift? 100.0 : 1.0 ));
 		gup_bpm=1;
 		mlatch = phony_latch_bpm;
 	}
@@ -761,6 +783,10 @@ if(gup_bpm){
 	sg_modtext( bpm_tex, bpm_text);
 	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 66, 8);
 	sg_drawtex( bpm_tex, giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 0, 255, 255, 255, 255);
+}
+{ // bpm light
+	sg_rect r = {giselw*(SYN_TONES+SYN_TONES/8)+1, 1, 2, 6, beat!=pbeat?255:50, 50+(tap_tempo>0? 200 : 0), 50, 255, 0,0};
+	sg_drawrect( r );
 }
 // pattern step add
 if(gup_step_add){
@@ -778,6 +804,7 @@ if(gup_spb){
 	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4+76, 0, 40, 8);
 	sg_drawtex( spb_tex, giselw*(SYN_TONES+SYN_TONES/8)+4+76, 0, 0, 255, 255, 255, 255);
 }
+
 // latch val
 if(mlatch>(float*)100){
 	if(gup_mlatch){
@@ -928,7 +955,7 @@ for(int i=0; i<OSC_PER_TONE; i++){
 				case 2: mlatch = &(G.syn->tone[_isel].osc_env[i].s); mlatch_adsr=j; mlatch_adsr_osc=i; break;
 				case 3: mlatch = &(G.syn->tone[_isel].osc_env[i].r); mlatch_adsr=j; mlatch_adsr_osc=i; break;
 			}
-			mlatch_min=0.001;
+			mlatch_min= j==2? 0.0: 0.001;
 			mlatch_max= j==2? 1.0 : j==3? 10.0 : 3.0;
 			mlatch_factor= j==3? .1 : j==2? 0.01 : 0.05;
 			mlatch_v=1;
@@ -1064,7 +1091,6 @@ if(request_quit){
 /*----------------------------------------------------------------------------*/
 /* end GUI */
 /*----------------------------------------------------------------------------*/
-
 if (kbget(SDLK_LEFT )){
 	key_delay++;
 	if(key_delay==0){ key_delay=-6;
@@ -1081,16 +1107,23 @@ if (kbget(SDLK_RIGHT)){
 		else astep( step_sel+1);
 	}
 }
-if (kbget(SDLK_UP   )){ kbset(SDLK_UP, 0);
-	if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-		G.syn->seq[_isel].spb=MIN(G.syn->seq[_isel].spb+1, SEQ_LEN);gup_spb=1;}
-	else {step_add++;gup_step_add=1;}
+if (kbget(SDLK_UP)){ //kbset(SDLK_UP, 0);
+	key_delay++;
+	if(key_delay==0){ key_delay=-6;
+		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+			G.syn->seq[_isel].spb=MIN(G.syn->seq[_isel].spb+1, SEQ_LEN);gup_spb=1;}
+		else {step_add++;gup_step_add=1;}
+	}
 }
-if (kbget(SDLK_DOWN )){ kbset(SDLK_DOWN, 0);
-	if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-		G.syn->seq[_isel].spb=MAX(G.syn->seq[_isel].spb-1, 1)      ;gup_spb=1;}
-	else if(step_add>0) {step_add--; gup_step_add=1;}
+if (kbget(SDLK_DOWN )){ //kbset(SDLK_DOWN, 0);
+	key_delay++;
+	if(key_delay==0){ key_delay=-6;
+		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+			G.syn->seq[_isel].spb=MAX(G.syn->seq[_isel].spb-1, 1)      ;gup_spb=1;}
+		else if(step_add>0) {step_add--; gup_step_add=1;}
+	}
 }
+
 
 if(kbget(SDLK_DELETE)){
 	if(!(kbget(SDLK_RALT) || kbget(SDLK_LALT) || kbget(SDLK_ALTERASE)))
@@ -1101,19 +1134,29 @@ if(kbget(SDLK_DELETE)){
 if(kbget(SDLK_EQUALS)){
 	if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)){
 		kbset(SDLK_EQUALS, 0);
-		testoctave++;
+		octave++;
 	}
 }
 if(kbget(SDLK_MINUS)){
 	if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)){
 		kbset(SDLK_MINUS, 0);
-		testoctave--;
+		octave--;
 	}
 }
-// case '-': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) testoctave--; break;
-// case '=': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) testoctave++; break;
-
-
+// case '-': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) octave--; break;
+// case '=': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) octave++; break;
+if(kbget(tap_tempo_key)){
+	kbset(tap_tempo_key, 0);
+	if(tap_tempo == -1){
+		tap_tempo=G.time;
+	} else {
+		float target_bpm = 1.f / ((G.time-tap_tempo) / 60.0);
+		syn_bpm(G.syn, target_bpm);
+		tap_tempo=-1;
+		gup_bpm=1;
+	}
+}
+if(1.f / ((G.time-tap_tempo) / 60.0)<tap_tempo_min_bpm) tap_tempo=-1;
 
 		frame++;
 		pbeat = beat;
@@ -1131,7 +1174,6 @@ if(kbget(SDLK_MINUS)){
 			emscripten_cancel_main_loop();
 			return;
 		}
-		// SDL_Delay(60);
 	#endif
 }
 
@@ -1237,18 +1279,18 @@ syn_lock(G.syn, 1); // todo make a finer lock
 					// seq_mode = !seq_mode;
 					// syn_anof(G.syn, _isel); isel(0); break;
 
-				case SDLK_F1:  isel(0); break;
-				case SDLK_F2:  isel(1); break;
-				case SDLK_F3:  isel(2); break;
-				case SDLK_F4:  isel(3); break;
-				case SDLK_F5:  isel(4); break;
-				case SDLK_F6:  isel(5); break;
-				case SDLK_F7:  isel(6); break;
-				case SDLK_F8:  isel(7); break;
-				case SDLK_F9:  isel(8); break;
-				case SDLK_F10: isel(9); break;
-				case SDLK_F11: isel(10); break;
-				case SDLK_F12: isel(11); break;
+				case SDLK_F1:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+0, !seq_mute(G.syn->seq+0, -1));} else isel(0); break;
+				case SDLK_F2:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+1, !seq_mute(G.syn->seq+1, -1));} else isel(1); break;
+				case SDLK_F3:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+2, !seq_mute(G.syn->seq+2, -1));} else isel(2); break;
+				case SDLK_F4:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+3, !seq_mute(G.syn->seq+3, -1));} else isel(3); break;
+				case SDLK_F5:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+4, !seq_mute(G.syn->seq+4, -1));} else isel(4); break;
+				case SDLK_F6:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+5, !seq_mute(G.syn->seq+5, -1));} else isel(5); break;
+				case SDLK_F7:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+6, !seq_mute(G.syn->seq+6, -1));} else isel(6); break;
+				case SDLK_F8:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+7, !seq_mute(G.syn->seq+7, -1));} else isel(7); break;
+				case SDLK_F9:  if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+8, !seq_mute(G.syn->seq+8, -1));} else isel(8); break;
+				case SDLK_F10: if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+9, !seq_mute(G.syn->seq+9, -1));} else isel(9); break;
+				case SDLK_F11: if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+10, !seq_mute(G.syn->seq+10, -1));} else isel(10); break;
+				case SDLK_F12: if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+11, !seq_mute(G.syn->seq+11, -1));} else isel(11); break;
 
 				case SDLK_RETURN: syn_pause(G.syn); break;
 				case SDLK_SPACE: rec=!rec; gup_rec=1; break;
@@ -1258,7 +1300,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 
 				case SDLK_INSERT: astep(step_sel + step_add); break;
 
-
+#if 1
 				case 'q': key_update('q', 1); break; //do 4
 				case '2': key_update('2', 1); break;
 				case 'w': key_update('w', 1); break;
@@ -1298,6 +1340,26 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case ';': key_update(';', 1); break;
 				case '/': key_update('/', 1); break;
 
+#else // ableton style keys
+				case 'a':  key_update(e.key.keysym.sym, 1); break; //do 4
+				case 'w':  key_update(e.key.keysym.sym, 1); break;
+				case 's':  key_update(e.key.keysym.sym, 1); break;
+				case 'e':  key_update(e.key.keysym.sym, 1); break;
+				case 'd':  key_update(e.key.keysym.sym, 1); break;
+				case 'f':  key_update(e.key.keysym.sym, 1); break;
+				case 't':  key_update(e.key.keysym.sym, 1); break;
+				case 'g':  key_update(e.key.keysym.sym, 1); break;
+				case 'y':  key_update(e.key.keysym.sym, 1); break; //lab
+				case 'h':  key_update(e.key.keysym.sym, 1); break; //la
+				case 'u':  key_update(e.key.keysym.sym, 1); break; //sib
+				case 'j':  key_update(e.key.keysym.sym, 1); break; //si
+				case 'k':  key_update(e.key.keysym.sym, 1); break; //do 5
+				case 'o':  key_update(e.key.keysym.sym, 1); break;
+				case 'l':  key_update(e.key.keysym.sym, 1); break;
+				case 'p':  key_update(e.key.keysym.sym, 1); break;
+				case ';':  key_update(e.key.keysym.sym, 1); break;
+				case '\'': key_update(e.key.keysym.sym, 1); break;
+#endif
 				// case '[': testvelocity = CLAMP(testvelocity-.5, 0.0, 1.0); break;
 				// case ']': testvelocity = CLAMP(testvelocity+.5, 0.0, 1.0); break;
 
@@ -1308,6 +1370,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 			if(e.key.repeat) break;
 			kbstate[ e.key.keysym.scancode % kbstate_max ] = 0;
 			switch(e.key.keysym.sym){
+#if 1
 				case 'q': key_update('q', 0); break; //do 4
 				case '2': key_update('2', 0); break;
 				case 'w': key_update('w', 0); break;
@@ -1346,6 +1409,28 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case '.': key_update('.', 0); break;
 				case ';': key_update(';', 0); break;
 				case '/': key_update('/', 0); break;
+
+#else // ableton style keys
+				case 'a':  key_update(e.key.keysym.sym, 0); break; //do 4
+				case 'w':  key_update(e.key.keysym.sym, 0); break;
+				case 's':  key_update(e.key.keysym.sym, 0); break;
+				case 'e':  key_update(e.key.keysym.sym, 0); break;
+				case 'd':  key_update(e.key.keysym.sym, 0); break;
+				case 'f':  key_update(e.key.keysym.sym, 0); break;
+				case 't':  key_update(e.key.keysym.sym, 0); break;
+				case 'g':  key_update(e.key.keysym.sym, 0); break;
+				case 'y':  key_update(e.key.keysym.sym, 0); break;
+				case 'h':  key_update(e.key.keysym.sym, 0); break;
+				case 'u':  key_update(e.key.keysym.sym, 0); break;
+				case 'j':  key_update(e.key.keysym.sym, 0); break;
+				case 'k':  key_update(e.key.keysym.sym, 0); break; // do 5
+				case 'o':  key_update(e.key.keysym.sym, 0); break;
+				case 'l':  key_update(e.key.keysym.sym, 0); break;
+				case 'p':  key_update(e.key.keysym.sym, 0); break;
+				case ';':  key_update(e.key.keysym.sym, 0); break;
+				case '\'': key_update(e.key.keysym.sym, 0); break;
+#endif
+
 				default:break;
 			}
 			break;
@@ -1369,7 +1454,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 
 	#ifndef _3DS
 		// case SDL_FINGERDOWN:
-		// 	voices[5][13+12+1]=syn_non(G.syn, 5, 3 -12+12*testoctave, testvelocity);
+		// 	voices[5][13+12+1]=syn_non(G.syn, 5, 3 -12+12*octave, testvelocity);
 
 		// case SDL_FINGERMOTION:
 
@@ -1947,50 +2032,71 @@ void key_update(char key, char on){
 	float target_freq=0;
 	if(on){
 		switch(key){
-			case 'q': target_freq=-9 +12*testoctave; voices[_isel][0]=syn_non(G.syn, _isel, -9 +12*testoctave, testvelocity); break; //do 4
-			case '2': target_freq=-8 +12*testoctave; voices[_isel][1]=syn_non(G.syn, _isel, -8 +12*testoctave, testvelocity); break;
-			case 'w': target_freq=-7 +12*testoctave; voices[_isel][2]=syn_non(G.syn, _isel, -7 +12*testoctave, testvelocity); break;
-			case '3': target_freq=-6 +12*testoctave; voices[_isel][3]=syn_non(G.syn, _isel, -6 +12*testoctave, testvelocity); break;
-			case 'e': target_freq=-5 +12*testoctave; voices[_isel][4]=syn_non(G.syn, _isel, -5 +12*testoctave, testvelocity); break;
-			case 'r': target_freq=-4 +12*testoctave; voices[_isel][5]=syn_non(G.syn, _isel, -4 +12*testoctave, testvelocity); break;
-			case '5': target_freq=-3 +12*testoctave; voices[_isel][6]=syn_non(G.syn, _isel, -3 +12*testoctave, testvelocity); break;
-			case 't': target_freq=-2 +12*testoctave; voices[_isel][7]=syn_non(G.syn, _isel, -2 +12*testoctave, testvelocity); break;
-			case '6': target_freq=-1 +12*testoctave; voices[_isel][8]=syn_non(G.syn, _isel, -1 +12*testoctave, testvelocity); break; //lab
-			case 'y': target_freq= 0 +12*testoctave; voices[_isel][9]=syn_non(G.syn, _isel,  0 +12*testoctave, testvelocity); break; //la
-			case '7': target_freq= 1 +12*testoctave; voices[_isel][10]=syn_non(G.syn, _isel, 1 +12*testoctave, testvelocity); break; //sib
-			case 'u': target_freq= 2 +12*testoctave; voices[_isel][11]=syn_non(G.syn, _isel, 2 +12*testoctave, testvelocity); break; //si
-			case 'i': target_freq= 3 +12*testoctave; voices[_isel][12]=syn_non(G.syn, _isel, 3 +12*testoctave, testvelocity); break; //do 5
-			case '9': target_freq= 4 +12*testoctave; voices[_isel][13]=syn_non(G.syn, _isel, 4 +12*testoctave, testvelocity); break;
-			case 'o': target_freq= 5 +12*testoctave; voices[_isel][14]=syn_non(G.syn, _isel, 5 +12*testoctave, testvelocity); break;
-			case '0': target_freq= 6 +12*testoctave; voices[_isel][15]=syn_non(G.syn, _isel, 6 +12*testoctave, testvelocity); break;
-			case 'p': target_freq= 7 +12*testoctave; voices[_isel][16]=syn_non(G.syn, _isel, 7 +12*testoctave, testvelocity); break;
-			case '[': target_freq= 8 +12*testoctave; voices[_isel][17]=syn_non(G.syn, _isel, 8 +12*testoctave, testvelocity); break;
-			case '=': target_freq= 9 +12*testoctave; voices[_isel][18]=syn_non(G.syn, _isel, 9 +12*testoctave, testvelocity); break;
-			case ']': target_freq= 10+12*testoctave; voices[_isel][19]=syn_non(G.syn, _isel, 10+12*testoctave, testvelocity); break;
+#if 1
+			case 'q': target_freq=-9 +12*octave; voices[_isel][0]=syn_non(G.syn, _isel, -9 +12*octave, testvelocity); break; //do 4
+			case '2': target_freq=-8 +12*octave; voices[_isel][1]=syn_non(G.syn, _isel, -8 +12*octave, testvelocity); break;
+			case 'w': target_freq=-7 +12*octave; voices[_isel][2]=syn_non(G.syn, _isel, -7 +12*octave, testvelocity); break;
+			case '3': target_freq=-6 +12*octave; voices[_isel][3]=syn_non(G.syn, _isel, -6 +12*octave, testvelocity); break;
+			case 'e': target_freq=-5 +12*octave; voices[_isel][4]=syn_non(G.syn, _isel, -5 +12*octave, testvelocity); break;
+			case 'r': target_freq=-4 +12*octave; voices[_isel][5]=syn_non(G.syn, _isel, -4 +12*octave, testvelocity); break;
+			case '5': target_freq=-3 +12*octave; voices[_isel][6]=syn_non(G.syn, _isel, -3 +12*octave, testvelocity); break;
+			case 't': target_freq=-2 +12*octave; voices[_isel][7]=syn_non(G.syn, _isel, -2 +12*octave, testvelocity); break;
+			case '6': target_freq=-1 +12*octave; voices[_isel][8]=syn_non(G.syn, _isel, -1 +12*octave, testvelocity); break; //lab
+			case 'y': target_freq= 0 +12*octave; voices[_isel][9]=syn_non(G.syn, _isel,  0 +12*octave, testvelocity); break; //la
+			case '7': target_freq= 1 +12*octave; voices[_isel][10]=syn_non(G.syn, _isel, 1 +12*octave, testvelocity); break; //sib
+			case 'u': target_freq= 2 +12*octave; voices[_isel][11]=syn_non(G.syn, _isel, 2 +12*octave, testvelocity); break; //si
+			case 'i': target_freq= 3 +12*octave; voices[_isel][12]=syn_non(G.syn, _isel, 3 +12*octave, testvelocity); break; //do 5
+			case '9': target_freq= 4 +12*octave; voices[_isel][13]=syn_non(G.syn, _isel, 4 +12*octave, testvelocity); break;
+			case 'o': target_freq= 5 +12*octave; voices[_isel][14]=syn_non(G.syn, _isel, 5 +12*octave, testvelocity); break;
+			case '0': target_freq= 6 +12*octave; voices[_isel][15]=syn_non(G.syn, _isel, 6 +12*octave, testvelocity); break;
+			case 'p': target_freq= 7 +12*octave; voices[_isel][16]=syn_non(G.syn, _isel, 7 +12*octave, testvelocity); break;
+			case '[': target_freq= 8 +12*octave; voices[_isel][17]=syn_non(G.syn, _isel, 8 +12*octave, testvelocity); break;
+			case '=': target_freq= 9 +12*octave; voices[_isel][18]=syn_non(G.syn, _isel, 9 +12*octave, testvelocity); break;
+			case ']': target_freq= 10+12*octave; voices[_isel][19]=syn_non(G.syn, _isel, 10+12*octave, testvelocity); break;
 
-			case 'z': target_freq=-9 -12+12*testoctave; voices[_isel][20+0]=syn_non(G.syn, _isel, -9 -12+12*testoctave, testvelocity); break; //do 3
-			case 's': target_freq=-8 -12+12*testoctave; voices[_isel][20+1]=syn_non(G.syn, _isel, -8 -12+12*testoctave, testvelocity); break;
-			case 'x': target_freq=-7 -12+12*testoctave; voices[_isel][20+2]=syn_non(G.syn, _isel, -7 -12+12*testoctave, testvelocity); break;
-			case 'd': target_freq=-6 -12+12*testoctave; voices[_isel][20+3]=syn_non(G.syn, _isel, -6 -12+12*testoctave, testvelocity); break;
-			case 'c': target_freq=-5 -12+12*testoctave; voices[_isel][20+4]=syn_non(G.syn, _isel, -5 -12+12*testoctave, testvelocity); break;
-			case 'v': target_freq=-4 -12+12*testoctave; voices[_isel][20+5]=syn_non(G.syn, _isel, -4 -12+12*testoctave, testvelocity); break;
-			case 'g': target_freq=-3 -12+12*testoctave; voices[_isel][20+6]=syn_non(G.syn, _isel, -3 -12+12*testoctave, testvelocity); break;
-			case 'b': target_freq=-2 -12+12*testoctave; voices[_isel][20+7]=syn_non(G.syn, _isel, -2 -12+12*testoctave, testvelocity); break;
-			case 'h': target_freq=-1 -12+12*testoctave; voices[_isel][20+8]=syn_non(G.syn, _isel, -1 -12+12*testoctave, testvelocity); break; //lab
-			case 'n': target_freq= 0 -12+12*testoctave; voices[_isel][20+9]=syn_non(G.syn, _isel,  0 -12+12*testoctave, testvelocity); break; //la
-			case 'j': target_freq= 1 -12+12*testoctave; voices[_isel][20+10]=syn_non(G.syn, _isel, 1 -12+12*testoctave, testvelocity); break; //sib
-			case 'm': target_freq= 2 -12+12*testoctave; voices[_isel][20+11]=syn_non(G.syn, _isel, 2 -12+12*testoctave, testvelocity); break; //si
-			case ',': target_freq= 3 -12+12*testoctave; voices[_isel][20+12]=syn_non(G.syn, _isel, 3 -12+12*testoctave, testvelocity); break; //do 4
-			case 'l': target_freq= 4 -12+12*testoctave; voices[_isel][20+13]=syn_non(G.syn, _isel, 4 -12+12*testoctave, testvelocity); break;
-			case '.': target_freq= 5 -12+12*testoctave; voices[_isel][20+14]=syn_non(G.syn, _isel, 5 -12+12*testoctave, testvelocity); break;
-			case ';': target_freq= 6 -12+12*testoctave; voices[_isel][20+15]=syn_non(G.syn, _isel, 6 -12+12*testoctave, testvelocity); break;
-			case '/': target_freq= 7 -12+12*testoctave; voices[_isel][20+16]=syn_non(G.syn, _isel, 7 -12+12*testoctave, testvelocity); break;
+			case 'z': target_freq=-9 -12+12*octave; voices[_isel][20+0]=syn_non(G.syn, _isel, -9 -12+12*octave, testvelocity); break; //do 3
+			case 's': target_freq=-8 -12+12*octave; voices[_isel][20+1]=syn_non(G.syn, _isel, -8 -12+12*octave, testvelocity); break;
+			case 'x': target_freq=-7 -12+12*octave; voices[_isel][20+2]=syn_non(G.syn, _isel, -7 -12+12*octave, testvelocity); break;
+			case 'd': target_freq=-6 -12+12*octave; voices[_isel][20+3]=syn_non(G.syn, _isel, -6 -12+12*octave, testvelocity); break;
+			case 'c': target_freq=-5 -12+12*octave; voices[_isel][20+4]=syn_non(G.syn, _isel, -5 -12+12*octave, testvelocity); break;
+			case 'v': target_freq=-4 -12+12*octave; voices[_isel][20+5]=syn_non(G.syn, _isel, -4 -12+12*octave, testvelocity); break;
+			case 'g': target_freq=-3 -12+12*octave; voices[_isel][20+6]=syn_non(G.syn, _isel, -3 -12+12*octave, testvelocity); break;
+			case 'b': target_freq=-2 -12+12*octave; voices[_isel][20+7]=syn_non(G.syn, _isel, -2 -12+12*octave, testvelocity); break;
+			case 'h': target_freq=-1 -12+12*octave; voices[_isel][20+8]=syn_non(G.syn, _isel, -1 -12+12*octave, testvelocity); break; //lab
+			case 'n': target_freq= 0 -12+12*octave; voices[_isel][20+9]=syn_non(G.syn, _isel,  0 -12+12*octave, testvelocity); break; //la
+			case 'j': target_freq= 1 -12+12*octave; voices[_isel][20+10]=syn_non(G.syn, _isel, 1 -12+12*octave, testvelocity); break; //sib
+			case 'm': target_freq= 2 -12+12*octave; voices[_isel][20+11]=syn_non(G.syn, _isel, 2 -12+12*octave, testvelocity); break; //si
+			case ',': target_freq= 3 -12+12*octave; voices[_isel][20+12]=syn_non(G.syn, _isel, 3 -12+12*octave, testvelocity); break; //do 4
+			case 'l': target_freq= 4 -12+12*octave; voices[_isel][20+13]=syn_non(G.syn, _isel, 4 -12+12*octave, testvelocity); break;
+			case '.': target_freq= 5 -12+12*octave; voices[_isel][20+14]=syn_non(G.syn, _isel, 5 -12+12*octave, testvelocity); break;
+			case ';': target_freq= 6 -12+12*octave; voices[_isel][20+15]=syn_non(G.syn, _isel, 6 -12+12*octave, testvelocity); break;
+			case '/': target_freq= 7 -12+12*octave; voices[_isel][20+16]=syn_non(G.syn, _isel, 7 -12+12*octave, testvelocity); break;
+#else // ableton style keys
+			case 'a': target_freq=-9 +12*octave; voices[_isel][0]=syn_non(G.syn, _isel, -9 +12*octave, testvelocity); break; //do 4
+			case 'w': target_freq=-8 +12*octave; voices[_isel][1]=syn_non(G.syn, _isel, -8 +12*octave, testvelocity); break;
+			case 's': target_freq=-7 +12*octave; voices[_isel][2]=syn_non(G.syn, _isel, -7 +12*octave, testvelocity); break;
+			case 'e': target_freq=-6 +12*octave; voices[_isel][3]=syn_non(G.syn, _isel, -6 +12*octave, testvelocity); break;
+			case 'd': target_freq=-5 +12*octave; voices[_isel][4]=syn_non(G.syn, _isel, -5 +12*octave, testvelocity); break;
+			case 'f': target_freq=-4 +12*octave; voices[_isel][5]=syn_non(G.syn, _isel, -4 +12*octave, testvelocity); break;
+			case 't': target_freq=-3 +12*octave; voices[_isel][6]=syn_non(G.syn, _isel, -3 +12*octave, testvelocity); break;
+			case 'g': target_freq=-2 +12*octave; voices[_isel][7]=syn_non(G.syn, _isel, -2 +12*octave, testvelocity); break;
+			case 'y': target_freq=-1 +12*octave; voices[_isel][8]=syn_non(G.syn, _isel, -1 +12*octave, testvelocity); break; //lab
+			case 'h': target_freq= 0 +12*octave; voices[_isel][9]=syn_non(G.syn, _isel,  0 +12*octave, testvelocity); break; //la
+			case 'u': target_freq= 1 +12*octave; voices[_isel][10]=syn_non(G.syn, _isel, 1 +12*octave, testvelocity); break; //sib
+			case 'j': target_freq= 2 +12*octave; voices[_isel][11]=syn_non(G.syn, _isel, 2 +12*octave, testvelocity); break; //si
+			case 'k': target_freq= 3 +12*octave; voices[_isel][12]=syn_non(G.syn, _isel, 3 +12*octave, testvelocity); break; //do 5
+			case 'o': target_freq= 4 +12*octave; voices[_isel][13]=syn_non(G.syn, _isel, 4 +12*octave, testvelocity); break;
+			case 'l': target_freq= 5 +12*octave; voices[_isel][14]=syn_non(G.syn, _isel, 5 +12*octave, testvelocity); break;
+			case 'p': target_freq= 6 +12*octave; voices[_isel][15]=syn_non(G.syn, _isel, 6 +12*octave, testvelocity); break;
+			case ';': target_freq= 7 +12*octave; voices[_isel][16]=syn_non(G.syn, _isel, 7 +12*octave, testvelocity); break;
+			case '\'': target_freq= 8 +12*octave; voices[_isel][17]=syn_non(G.syn, _isel, 8 +12*octave, testvelocity); break;
 
-
+#endif
 			default: break;
 		}
 	} else {
 		switch(key){
+#if 1
 			case 'q': syn_nof(G.syn, voices[_isel][0]     ); voices[_isel][0]     = (noteid){-1,-1}; break; //do 4
 			case '2': syn_nof(G.syn, voices[_isel][1]     ); voices[_isel][1]     = (noteid){-1,-1}; break;
 			case 'w': syn_nof(G.syn, voices[_isel][2]     ); voices[_isel][2]     = (noteid){-1,-1}; break;
@@ -2029,6 +2135,27 @@ void key_update(char key, char on){
 			case '.': syn_nof(G.syn, voices[_isel][20+14] ); voices[_isel][20+14] = (noteid){-1,-1};  break;
 			case ';': syn_nof(G.syn, voices[_isel][20+15] ); voices[_isel][20+15] = (noteid){-1,-1};  break;
 			case '/': syn_nof(G.syn, voices[_isel][20+16] ); voices[_isel][20+16] = (noteid){-1,-1};  break;
+#else // ableton style keys
+			case 'a': syn_nof(G.syn, voices[_isel][0]     ); voices[_isel][0]     = (noteid){-1,-1}; break; //do 4
+			case 'w': syn_nof(G.syn, voices[_isel][1]     ); voices[_isel][1]     = (noteid){-1,-1}; break;
+			case 's': syn_nof(G.syn, voices[_isel][2]     ); voices[_isel][2]     = (noteid){-1,-1}; break;
+			case 'e': syn_nof(G.syn, voices[_isel][3]     ); voices[_isel][3]     = (noteid){-1,-1}; break;
+			case 'd': syn_nof(G.syn, voices[_isel][4]     ); voices[_isel][4]     = (noteid){-1,-1}; break;
+			case 'f': syn_nof(G.syn, voices[_isel][5]     ); voices[_isel][5]     = (noteid){-1,-1}; break;
+			case 't': syn_nof(G.syn, voices[_isel][6]     ); voices[_isel][6]     = (noteid){-1,-1}; break;
+			case 'g': syn_nof(G.syn, voices[_isel][7]     ); voices[_isel][7]     = (noteid){-1,-1}; break;
+			case 'y': syn_nof(G.syn, voices[_isel][8]     ); voices[_isel][8]     = (noteid){-1,-1}; break;
+			case 'h': syn_nof(G.syn, voices[_isel][9]     ); voices[_isel][9]     = (noteid){-1,-1}; break;
+			case 'u': syn_nof(G.syn, voices[_isel][10]    ); voices[_isel][10]    = (noteid){-1,-1}; break;
+			case 'j': syn_nof(G.syn, voices[_isel][11]    ); voices[_isel][11]    = (noteid){-1,-1}; break;
+			case 'k': syn_nof(G.syn, voices[_isel][12]    ); voices[_isel][12]    = (noteid){-1,-1}; break; // do5
+			case 'o': syn_nof(G.syn, voices[_isel][13]    ); voices[_isel][13]    = (noteid){-1,-1}; break;
+			case 'l': syn_nof(G.syn, voices[_isel][14]    ); voices[_isel][14]    = (noteid){-1,-1}; break;
+			case 'p': syn_nof(G.syn, voices[_isel][15]    ); voices[_isel][15]    = (noteid){-1,-1}; break;
+			case ';': syn_nof(G.syn, voices[_isel][16]    ); voices[_isel][16]    = (noteid){-1,-1}; break;
+			case '\'': syn_nof(G.syn, voices[_isel][17]    ); voices[_isel][17]    = (noteid){-1,-1}; break;
+
+#endif
 			default:break;
 		}
 		if(rec) voice_count=MAX(voice_count-1, 0);

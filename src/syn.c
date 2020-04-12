@@ -48,12 +48,12 @@ void syn_init(syn* s, int sr){
 
 		s->tone[i].voices=0;
 
-		s->tone[i].pitch_env = adsr_make(sr, .001, .001, 1, 0.001 , .0,0);
+		s->tone[i].pitch_env = adsr_make(sr, .001, .001, 0, 0.001 , .0,0);
 		for(int k=0; k<OSC_PER_TONE; k++){
 			s->tone[i].osc_env[k] = adsr_make(sr, .001, .001, 1, 0.001 , 0,0);
 
 			s->tone[i].osc[k] = 0;
-			tone_omix(s->tone+i, k, k==0? .25 : 0);
+			tone_omix(s->tone+i, k, k==OSC_PER_TONE-1? .75 : 0);
 			s->tone[i].pwm[k] = .5;
 			s->tone[i].mod_mat[k][k] =  1;
 		}
@@ -186,7 +186,7 @@ void syn_seq_advance(syn* s, float secs){
 
 			if(s->seq[i].freq[j][s->seq[i].step]>0){
 
-				if(!tie)
+				if(!tie && !s->seq[i].mute)
 					s->seq[i].active[j] = syn_non(s, i, 0, 0);
 				syn_nfreq(s, s->seq[i].active[j], s->seq[i].freq[j][s->seq[i].step]);
 				syn_nvel(s, s->seq[i].active[j], s->seq[i].vel[j][s->seq[i].step]);
@@ -720,6 +720,12 @@ short seq_len(syn_seq* s, short len){ assert(s);
 short seq_spb(syn_seq* s, short spb){ assert(s);
 	short ret = s->spb;
 	if(spb>0) s->spb=spb;
+	return ret;
+}
+
+int seq_mute(syn_seq* s, int mute){ assert(s);
+	int ret = s->mute;
+	if(mute>=0) s->mute=mute;
 	return ret;
 }
 
