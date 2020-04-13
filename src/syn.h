@@ -10,6 +10,7 @@
 #include <SDL.h>
 #else
 #include <SDL2/SDL.h> // SDL_mutex
+// #include <SDL.h> // SDL_mutex
 #endif
 
 // typedef unsigned int int;
@@ -44,6 +45,7 @@ typedef struct {
 	int8_t osc[OSC_PER_TONE];
 
 	float pwm[OSC_PER_TONE];
+	float phase[OSC_PER_TONE];
 	float time [POLYPHONY][OSC_PER_TONE];
 
 	int16_t freq[POLYPHONY];

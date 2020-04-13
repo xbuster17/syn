@@ -51,10 +51,10 @@ void syn_init(syn* s, int sr){
 		s->tone[i].pitch_env = adsr_make(sr, .001, .001, 0, 0.001 , .0,0);
 		for(int k=0; k<OSC_PER_TONE; k++){
 			s->tone[i].osc_env[k] = adsr_make(sr, .001, .001, 1, 0.001 , 0,0);
-
 			s->tone[i].osc[k] = 0;
 			tone_omix(s->tone+i, k, k==OSC_PER_TONE-1? .75 : 0);
 			s->tone[i].pwm[k] = .5;
+			s->tone[i].phase[k] = 0;
 			s->tone[i].mod_mat[k][k] =  1;
 		}
 	}
@@ -102,12 +102,6 @@ float syn_bpm(syn*s , float bpm){
 	if(bpm >= 0)
 		s->bpm = bpm;
 
-	// for(int i=0; i<SYN_TONES; i++){
-		// s->seq[i].time=0;
-		// s->seq[i].step-=1;
-		// syn_anof(s, i);
-	// }
-
 	// syn_lock(s, 0);
 	return ret;
 }
@@ -141,21 +135,19 @@ void syn_seq_advance(syn* s, float secs){
 						syn_modm_lerp(s, i, s->seq[i].modm[step], 100.0);
 					}
 				} break;
-			case 2:
+			case 2: // fixme
 				if((prev_step==-1) || (step >= s->seq[i].modm_target_step && !s->seq[i].modm_wait_loop)){
-					// float time_per_step = 1.0/(bps/s->seq[i].spb/1000.0);
-					// float time_per_step = (1000.0/(bps/s->seq[i].spb));
-					float time_per_step = 1000.0*(1.0/(bps*s->seq[i].spb));
-					// float time_per_step = 1.0/((s->bpm/s->seq[i].spb)/60000.0);
+
+					float time_per_step = 1000.0*(1.0/(bps*s->seq[i].spb)); // fixme
+
 					float tltime = prev_step!=-1 ? time_per_step : 0;
-					// float tltime = 0;
+
 					for(int ti=0; ti<s->seq[i].len; ti++){
 						int tim = (ti+(step)+1) % s->seq[i].len;
 						if(s->seq[i].modm[tim] != NULL){
 							syn_modm_lerp(s, i, s->seq[i].modm[tim], tltime);
 							s->seq[i].modm_target_step = tim;
 							if(tim < step) s->seq[i].modm_wait_loop = 1;
-							// printf("modulating i %i, t %f target step %i currstep %i w4l %i\n", i, tltime, tim, step, s->seq[i].modm_wait_loop);
 							break;
 						}
 						tltime += time_per_step;
@@ -167,11 +159,10 @@ void syn_seq_advance(syn* s, float secs){
 
 		float nort = s->seq[i].time-floor(s->seq[i].time);
 		for (int j = 0; j < POLYPHONY; j++){
-			// char tie = prev_step!=-1? s->seq[i].dur[prev_step] > .98 : 0;
 			char tie = prev_step!=-1? s->seq[i].dur[prev_step] > 250 : 0;
+			if(s->seq[i].mute) tie=0;
 
 			// check for note expiration
-			// if(nort > s->seq[i].dur[s->seq_step] &&!tie/*&& s->seq[i].dur[s->seq_step] < .98*/){
 			if((nort > s->seq[i].dur[s->seq[i].step]/250.f) && (!tie) && (prev_step == s->seq[i].step) && (s->seq[i].active[j].voice > -1)){
 				syn_nof(s, s->seq[i].active[j]);
 				s->seq[i].active[j] = (noteid){-1,-1};
@@ -252,21 +243,20 @@ void syn_run(syn* s, float* buffer, int len){
 
 	for(int i=0; i<SYN_TONES; i++){
 
-/* update modulation matrix */
-if(s->modm_target_active[i]){
-	// syn_modm_do_lerp(&s->tone[i].mod_mat, s->modm_target+i, s->modm_lerpt[i]/s->modm_lerpms[i]);
-	syn_modm_do_lerp(&s->tone[i].mod_mat, s->modm_target+i, MAPVAL(s->modm_lerpt[i], 0, s->modm_lerpms[i],0,1));
-	s->modm_lerpt[i] += ((float)len)/(s->sr)*1000.0;
-	if(s->modm_lerpt[i] >= s->modm_lerpms[i]){
-		s->modm_target_active[i] = 0;
-	}
-}
+	/* update modulation matrix */
+		if(s->modm_target_active[i]){
+			syn_modm_do_lerp(&s->tone[i].mod_mat, s->modm_target+i, s->modm_lerpt[i]/s->modm_lerpms[i]);
+			// syn_modm_do_lerp(&s->tone[i].mod_mat, s->modm_target+i, MAPVAL(s->modm_lerpt[i], 0, s->modm_lerpms[i],0,1));
+			s->modm_lerpt[i] += ((float)len)/(s->sr)*1000.0;
+			if(s->modm_lerpt[i] >= s->modm_lerpms[i]){
+				s->modm_target_active[i] = 0;
+			}
+		}
+
 		if(s->tone[i].voices==0) {continue;}
 
 		s->tone[i].vupeakl=0;
 		s->tone[i].vupeakr=0;
-// char has_lerpt_modm=0;
-// syn_mod_mat temp_modm;
 
 		for (int j=0; j<POLYPHONY; j++){
 
@@ -281,7 +271,7 @@ if(s->modm_target_active[i]){
 			// if(s->tone[i].osc_env[j].state==0){
 			int any_on =0;
 			for(int osc =0; osc<OSC_PER_TONE; osc++)
-				any_on += s->tone[i].amp_state[j][osc];
+				any_on += s->tone[i].amp_state[j][osc] != 0;
 
 			if(any_on==0){
 				if(s->tone[i].freq[j] > 0) s->tone[i].voices--;
@@ -356,27 +346,14 @@ if(s->modm_target_active[i]){
 						fm += a[mod] * fmamp;
 					}
 
-					// if(osc > 0){ //alg1?
-					// 	fmamp = s->tone[i].freq[j][osc-1]*s->tone[i].freq_ratio[osc-1]*(s->tone[i].fmindex[osc-1])*osc_env;
-					// 		fm=a[osc-1]*fmamp;
-					// 		// fm=sine(s->tone[i].time[j][0])*fmamp;
-					// }
-
 					// accum time
-					// float frat= s->tone[i].freq[j][osc] * s->tone[i].freq_ratio[osc];
 					float frat= s->tone[i].freq[j] * tone_frat(s->tone+i , osc, -1);
 					s->tone[i].time[j][osc] += /*fabsf*/(fm + s->master_detune + frat + frat*pitch_env) / s->sr;
 					s->tone[i].time[j][osc] = fmodf(s->tone[i].time[j][osc], 1);
 					if(s->tone[i].time[j][osc]<0) s->tone[i].time[j][osc] +=1;
 
-					// printf("%f\n", a);
-					// a[osc] *= osc_env;
-					// a[osc] *= osc_env[osc]; todo
-					// a[osc] *= .25; // count out carriers to average
-					// a[osc] *= s->tone[i].osc_mix[osc];
-					// oscaccum += a[osc] * s->tone[i].gain;
-					// a[osc] *= s->tone[i].gain;
 					a[osc] *= osc_env;
+
 					// accum carriers
 					oscaccum += a[osc] * tone_omix(s->tone+i, osc, -1);
 				}
@@ -443,6 +420,7 @@ noteid syn_non(syn* s, int instr, float note, float vel){ // note: semitone dist
 	for (int k = 0; k < OSC_PER_TONE; ++k){
 		s->tone[tone].amp_state[voice][k] = 1; // attack
 		s->tone[tone].amp_eg_out[voice][k] = 0;
+		s->tone[tone].time[voice][k] = 0 + s->tone[tone].phase[k];
 	}
 	s->tone[tone].gate[voice] = 1;
 	s->tone[tone].pitch_state[voice] = 1;

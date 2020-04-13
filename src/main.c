@@ -317,7 +317,6 @@ struct {
 
 
 
-
 int init_systems(void){
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"); // linear filtering
 
@@ -346,6 +345,7 @@ int init_systems(void){
 
 #ifndef _3DS
 
+int rflag = SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE;
 
 	if((G.window = SDL_CreateWindow( wname, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
 			// screen_width, screen_height, wflag)) == NULL){
@@ -353,7 +353,7 @@ int init_systems(void){
 		SDL_Log("E:%s\n", SDL_GetError());
 		return 1;
 	}
-	if((G.renderer = SDL_CreateRenderer( G.window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE)) == NULL){
+	if((G.renderer = SDL_CreateRenderer( G.window, -1, rflag)) == NULL){
 		SDL_Log("E:%s\n", SDL_GetError());
 		return 1;
 	}
@@ -580,19 +580,19 @@ int16_t modm_tex;
 int16_t label_tex[SYN_TONES][10];
 int16_t wave_tex[OSC_MAX];
 char wave_text[OSC_MAX][10]={
-	{"< sine >"},
-	{"< tri  >"},
-	{"< nois >"},
-	{"< sqr  >"},
-	{"< puls >"},
-	{"< saw  >"}
+	{"sine"},
+	{"tri "},
+	{"nois"},
+	{"sqr "},
+	{"puls"},
+	{"saw "}
 };
 int16_t seq_step_tex;
 
 int16_t rec_tex;
 
 #ifndef __vita__
-#define knob_size 15
+#define knob_size 13
 #else
 #define knob_size 41
 #endif
@@ -622,7 +622,7 @@ int gseq_basey=0;
 int gseqh=32;
 int gosc_basey=0;
 int gosch=16;
-int gmodm_basex=0;
+// int gmodm_basex=0;
 int gmodm_basey=0;
 int gadsr_basex=0;
 int gadst_basey=0;
@@ -742,16 +742,6 @@ for(int i=0; i<SYN_TONES; i++){
 	isel_padding+=giselw;
 	sg_drawperim(r);
 	// VUmeter
-	// r.x++;
-	// r.y=1;
-	// r.h=MIN(G.syn->tone[i].vupeakl * giselh, giselh-2);
-	// sg_rcol(&r, MIN(G.syn->tone[i].vupeakl, 1.0), MAX(1-G.syn->tone[i].vupeakl, 0),0,1);
-	// r.w=r.w/2-1;
-	// sg_drawrect(r);
-	// r.x+=r.w;
-	// r.h=MIN(G.syn->tone[i].vupeakr * giselh, giselh-2);
-	// sg_rcol(&r, MIN(G.syn->tone[i].vupeakr, 1.0), MAX(1-G.syn->tone[i].vupeakr, 0),0,1);
-	// sg_drawrect(r);
 	r.x++;
 	r.w=r.w/2-2;
 	r.y=giselh - (G.syn->tone[i].vupeakl * giselh)-1;
@@ -781,7 +771,7 @@ if(gup_bpm){
 	gup_bpm = 0;
 	snprintf( bpm_text, 8+4+2, "bpm:%3.3f", syn_bpm(G.syn, -1));
 	sg_modtext( bpm_tex, bpm_text);
-	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 66, 8);
+	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 76, 8);
 	sg_drawtex( bpm_tex, giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 0, 255, 255, 255, 255);
 }
 { // bpm light
@@ -909,8 +899,23 @@ if(gup_osc){
 		sg_drawtext(wave_tex[G.syn->tone[_isel].osc[i]], 0, gosc_basey+i*th, 0,   255,0,0,255);
 	}
 }
+int phase_basex = tw;
+{ // phase
+	for(int i=0; i<OSC_PER_TONE; i++){
+		sg_rect r={phase_basex , i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = &G.syn->tone[_isel].phase[i];
+			mlatch_min=0;
+			mlatch_max=1.0;
+			mlatch_factor=0.01;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].phase[i]*300, 255,255,155,255);
+	}
+}
 // modm
-int modm_basex = tw+2;
+int modm_basex = phase_basex+knob_size;
 for(int i=0; i<OSC_PER_TONE; i++){
 	for(int j=0; j<OSC_PER_TONE; j++){
 		if(j>i)break;
@@ -1293,7 +1298,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case SDLK_F12: if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+11, !seq_mute(G.syn->seq+11, -1));} else isel(11); break;
 
 				case SDLK_RETURN: syn_pause(G.syn); break;
-				case SDLK_SPACE: rec=!rec; gup_rec=1; break;
+				case SDLK_CAPSLOCK: rec=!rec; gup_rec=1; break;
 
 				case SDLK_HOME: astep(0); break;
 				case SDLK_END: astep(G.syn->seq[_isel].len-1); break;
@@ -1319,7 +1324,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case '0': key_update('0', 1); break;
 				case 'p': key_update('p', 1); break;
 				case '[': key_update('[', 1); break;
-				case '=': if(!(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT))) key_update('=', 1); break;
+				case '=': if(! (kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) ) key_update('=', 1); break;
 				case ']': key_update(']', 1); break;
 
 				case 'z': key_update('z', 1); break; //do 3
@@ -1389,7 +1394,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case '0': key_update('0', 0); break;
 				case 'p': key_update('p', 0); break;
 				case '[': key_update('[', 0); break;
-				case '=': key_update('=', 0); break;
+				case '=': if(! (kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) ) key_update('=', 0); break;
 				case ']': key_update(']', 0); break;
 
 				case 'z': key_update('z', 0); break; //do 3
