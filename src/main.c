@@ -852,8 +852,8 @@ if(gup_seq){
 			if(j==POLYPHONY){ // modulation matrix on bottom step
 				fillRect.x+=1;
 				fillRect.y+=1;
-				fillRect.w-=0;
-				fillRect.h-=0;
+				fillRect.w-=1;
+				fillRect.h-=2;
 				if(G.syn->seq[_isel].modm[k]){
 					sg_rcol(&fillRect, 1,0,0, 1);
 					sg_drawrect( fillRect );
