@@ -42,7 +42,10 @@
 #define BASE_SCREEN_WIDTH 960
 #define BASE_SCREEN_HEIGHT 544
 #else
-#define BASE_SCREEN_WIDTH 400
+// 3ds' top screen
+// #define BASE_SCREEN_WIDTH 400
+// #define BASE_SCREEN_HEIGHT 240
+#define BASE_SCREEN_WIDTH 320
 #define BASE_SCREEN_HEIGHT 240
 #endif
 
@@ -140,6 +143,10 @@ struct {
 	// int sample_rate = 32728;
 	int samples_size = 256*4;
 #endif
+
+int C0 = 0 -9 -12*4;
+#define MAX_KEYS (12*9)
+noteid voices[MAX_KEYS];
 
 
 // int testkey=0;
@@ -453,7 +460,12 @@ int rflag = SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED | SDL_RENDERER_
 
 
 
-
+char voices_inited=0;
+void init_voices(void){
+	voices_inited=1;
+	for(int i=0; i<MAX_KEYS;i++)
+		voices[i] = (noteid){-1, -1};
+}
 // int SDL_main(int argc, char**argv){ (void)argv, (void)argc;
 
 void main_loop(void);
@@ -473,6 +485,7 @@ int main(int argc, char**argv){ (void)argv, (void)argc;
 	}
 
 	syn_init(G.syn, sample_rate);
+	if(!voices_inited) init_voices();
 
 	if(init_systems()) exit(EXIT_FAILURE);
 
@@ -599,7 +612,7 @@ int16_t seq_step_tex;
 int16_t rec_tex;
 
 #ifndef __vita__
-#define knob_size 15
+#define knob_size 13
 #else
 #define knob_size 41
 #endif
@@ -627,7 +640,7 @@ float* phony_latch_vkb = (float*)4;
 int giselh=16; // height of intrument select / instrument vumeter
 int giselw=16;
 int gseq_basey=0;
-int gseqh=32;
+int gseqh=32+1;
 int gosc_basey=0;
 int gosch=16;
 // int gmodm_basex=0;
@@ -733,10 +746,12 @@ void main_loop(void){
 /*----------------------------------------------------------------------------*/
 
 // isel
-sg_clear_area(0,0, giselw*(SYN_TONES+SYN_TONES/8) , giselh);
+int giselendx = giselw*SYN_TONES + (giselw/8)*MAX(SYN_TONES/4-1,1);
+// sg_clear_area(0,0, giselw*(SYN_TONES+SYN_TONES/8) , giselh);
+sg_clear_area(0,0, giselendx , giselh);
 int isel_padding=0;
 for(int i=0; i<SYN_TONES; i++){
-	if((i!=0) && ((i%4)==0)) isel_padding+=giselw/2;
+	if((i!=0) && ((i%4)==0)) isel_padding+=giselw/8;
 	sg_rect r;
 	r.x=isel_padding;
 	r.y=0;
@@ -763,10 +778,11 @@ for(int i=0; i<SYN_TONES; i++){
 	sg_rcol(&r, MIN(G.syn->tone[i].vupeakr, 1.0), MAX(1-G.syn->tone[i].vupeakr, 0),0,1);
 	sg_drawrect(r);
 }
-
+int gbpmw = 76;
 // bpm mouse
 if( (!mlatch || (mlatch == phony_latch_bpm)) && Mouse.b0){
-	sg_rect r = {giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 70, 16, 0,0,0,0, 0,0};
+	// sg_rect r = {giselw*(SYN_TONES+SYN_TONES/4)+4, 0, 70, 16, 0,0,0,0, 0,0};
+	sg_rect r = {giselendx+5, 0, gbpmw, 16, 0,0,0,0, 0,0};
 	if((mlatch == phony_latch_bpm) || ptbox(Mouse.px, Mouse.py, r)){
 		int shift = kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT);
 		float bpm = syn_bpm(G.syn, -1);
@@ -780,11 +796,14 @@ if(gup_bpm){
 	gup_bpm = 0;
 	snprintf( bpm_text, 8+4+2, "bpm:%3.3f", syn_bpm(G.syn, -1));
 	sg_modtext( bpm_tex, bpm_text);
-	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 76, 8);
-	sg_drawtex( bpm_tex, giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 0, 255, 255, 255, 255);
+	// sg_clear_area( giselw*(SYN_TONES+SYN_TONES/4)+4, 0, 76, 8);
+	sg_clear_area( giselendx+5, 0, gbpmw, 8);
+	// sg_drawtex( bpm_tex, giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 0, 255, 255, 255, 255);
+	sg_drawtex( bpm_tex, giselendx+5, 0, 0, 255, 255, 255, 255);
 }
 { // bpm light
-	sg_rect r = {giselw*(SYN_TONES+SYN_TONES/8)+1, 1, 2, 6, beat!=pbeat?255:50, 50+(tap_tempo>0? 200 : 0), 50, 255, 0,0};
+	// sg_rect r = {giselw*(SYN_TONES+SYN_TONES/4)+1, 1, 2, 6, beat!=pbeat?255:50, 50+(tap_tempo>0? 200 : 0), 50, 255, 0,0};
+	sg_rect r = {giselendx+1, 1, 3, 6, beat!=pbeat?255:50, 50+(tap_tempo>0? 200 : 0), 50, 255, 0,0};
 	sg_drawrect( r );
 }
 // pattern step add
@@ -792,16 +811,16 @@ if(gup_step_add){
 	gup_step_add = 0;
 	snprintf( step_add_text, 8+4, "add:%i", step_add);
 	sg_modtext( step_add_tex, step_add_text);
-	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4, 8, 64, 8);
-	sg_drawtex( step_add_tex, giselw*(SYN_TONES+SYN_TONES/8)+4, 8, 0, 255, 155, 155, 255);
+	sg_clear_area( giselendx+5 +gbpmw, 8, 64, 8);
+	sg_drawtex( step_add_tex, giselendx+5+gbpmw, 8, 0, 255, 155, 155, 255);
 }
 // pattern steps per beat
 if(gup_spb){
 	gup_spb = 0;
 	snprintf( spb_text, 8+4, "spb:%i", G.syn->seq[_isel].spb);
 	sg_modtext( spb_tex, spb_text);
-	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4+76, 0, 40, 8);
-	sg_drawtex( spb_tex, giselw*(SYN_TONES+SYN_TONES/8)+4+76, 0, 0, 255, 255, 255, 255);
+	sg_clear_area( giselendx+5+gbpmw, 0, 40, 8);
+	sg_drawtex( spb_tex, giselendx+5+gbpmw, 0, 0, 255, 255, 255, 255);
 }
 
 // latch val
@@ -810,23 +829,8 @@ if(mlatch>(float*)100){
 		gup_mlatch=0;
 		snprintf( mlatch_text, 8+4, "val:%3.3f", *mlatch);
 		sg_modtext( mlatch_tex, mlatch_text);
-		sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4+76+50, 0, 128, 16);
-		sg_drawtex( mlatch_tex, giselw*(SYN_TONES+SYN_TONES/8)+4+76+50, 0, 0, 155, 255, 155, 255);
-	}
-}
-// rec label
-if(gup_rec){
-	gup_rec = 0;
-
-	sg_clear_area( giselw*(SYN_TONES+SYN_TONES/8)+4+76, 8, 40, 8);
-	sg_drawtex( rec_tex, giselw*(SYN_TONES+SYN_TONES/8)+4+76, 8, 0, 255*rec, 55, 55, 255);
-}
-{
-	sg_rect r={giselw*(SYN_TONES+SYN_TONES/8)+4+76, 0, 40, 16, 0,0,0,0, 0,0};
-	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-		Mouse.b0=0;
-		gup_rec=1;
-		rec=!rec;
+		sg_clear_area( giselendx+5, 8, gbpmw, 8);
+		sg_drawtex( mlatch_tex, giselendx+5, 8, 0, 155, 255, 155, 255);
 	}
 }
 
@@ -840,16 +844,16 @@ if(gup_seq){
 		for(int j=0; j<POLYPHONY+1; j++){
 			fillRect.x=k*hlen;
 			fillRect.y=j*vlen + gseq_basey;
-			fillRect.w=hlen-1;
-			fillRect.h=vlen-1;
+			fillRect.w=hlen+1;
+			fillRect.h=vlen+1;
 
-			sg_rcol(&fillRect, 0,0,1, 1);
+			sg_rcol(&fillRect, k % G.syn->seq[_isel].spb ? 0 : .5 ,0, 1, 1);
 			sg_drawperim( fillRect );
-			if(j==POLYPHONY){
+			if(j==POLYPHONY){ // modulation matrix on bottom step
 				fillRect.x+=1;
 				fillRect.y+=1;
-				fillRect.w-=2;
-				fillRect.h-=2;
+				fillRect.w-=0;
+				fillRect.h-=0;
 				if(G.syn->seq[_isel].modm[k]){
 					sg_rcol(&fillRect, 1,0,0, 1);
 					sg_drawrect( fillRect );
@@ -858,8 +862,8 @@ if(gup_seq){
 			else if(G.syn->seq[_isel].freq[j][k] >0){
 				fillRect.x+=1;
 				fillRect.y+=1;
-				fillRect.w*=G.syn->seq[_isel].dur[k]/255.f;
-				fillRect.w--;
+				fillRect.w= MAX((hlen)*G.syn->seq[_isel].dur[k]/255.f, 2);
+				// fillRect.w-=1;
 				fillRect.h-=2;
 				sg_rcol(&fillRect, 1,1,0, 1);
 				sg_drawrect( fillRect );
@@ -958,7 +962,7 @@ for(int i=0; i<OSC_PER_TONE; i++){
 	sg_drawtex(knob_tex, r.x, r.y, tone_omix(G.syn->tone+_isel, i, -1)*300, 155,155,255,255);
 }
 // envelopes
-int ampenv_basex = modm_basex + (knob_size+1)*OSC_PER_TONE+knob_size+1 +knob_size/2;
+int ampenv_basex = modm_basex + (knob_size+1)*OSC_PER_TONE+knob_size+1 +knob_size/4;
 for(int i=0; i<OSC_PER_TONE; i++){
 	for(int j=0; j<4; j++){
 		sg_rect r={j*(knob_size+1)+ampenv_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
@@ -983,7 +987,7 @@ for(int i=0; i<OSC_PER_TONE; i++){
 	}
 }
 // modm target
-int modm_target_basex = ampenv_basex + 4*(knob_size+1) + knob_size/2;
+int modm_target_basex = ampenv_basex + 4*(knob_size+1) + knob_size/4;
 for(int i=0; i<OSC_PER_TONE; i++){
 	for(int j=0; j<OSC_PER_TONE; j++){
 		if(j>i)break;
@@ -1115,17 +1119,20 @@ if(request_quit){
 }
 
 // virtual keyboard
-int vkb_h = 64;
+int vkb_h = 32;
 int vkb_basey = BASE_SCREEN_HEIGHT-vkb_h;
-int vkb_keys = 12*3;
+int vkb_keys = 12*2+1;
+int vkb_endx = 0;
 if(gup_vkb || Mouse.py<= vkb_basey){
 	sg_rect r = {0, vkb_basey, BASE_SCREEN_WIDTH, vkb_h, 255, 255,255,255, 0,0};
 	if(gup_vkb) sg_clear_area(r.x, r.y, r.w, r.h);
-	r.w=((float)BASE_SCREEN_WIDTH)/vkb_keys+1;
-	r.x+=2;
+	r.w=((float)BASE_SCREEN_WIDTH)/vkb_keys;
+	// r.x+=2;
 	for(int o = 0 ; o < 3; o++ ){
 		int notei=0;
 		for(int i = 0 ; i <= 13; i++){
+			if(o>=2 && i>=1) break;
+
 			char black = i%2;
 			// r.h = black? vkb_h/2 : vkb_h;
 			r.r = black? 55 : 255;
@@ -1134,7 +1141,7 @@ if(gup_vkb || Mouse.py<= vkb_basey){
 
 			if(i!=0 && (i==5 || i==13)) continue;
 			char collision = (!mlatch || mlatch==phony_latch_vkb) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r);
-			if(collision) r.b=0;
+			if(collision || voices[((-9+notei+o*12)-C0)%MAX_KEYS].tone != -1 ) r.b=0;
 
 			if(collision && (!vkb_note_active || vkb_note!=-9+notei+o*12)) {
 				mlatch = phony_latch_vkb;
@@ -1152,11 +1159,14 @@ if(gup_vkb || Mouse.py<= vkb_basey){
 			r.g = 0;
 			r.b = 0;
 			if(gup_vkb) sg_drawperim(r);
-			r.x += ((float)BASE_SCREEN_WIDTH)/(12*3);
+			r.x += ((float)BASE_SCREEN_WIDTH)/(vkb_keys)-1;
 		}
 	}
+	vkb_endx = r.x;
 }
-// play button
+
+
+// play/rec button
 {
 	int sx=0,sy=0;
 	sg_texsize(gplay_tex, &sx,&sy);
@@ -1167,6 +1177,23 @@ if(gup_vkb || Mouse.py<= vkb_basey){
 	}
 	char p = G.syn->seq_play;
 	sg_drawtex(gplay_tex, r.x, r.y, 0, p?255:55, 55, 55, 255);
+
+//rec
+	int rsx=0,rsy=0;
+	sg_texsize(rec_tex, &rsx,&rsy);
+	if(gup_rec){
+		gup_rec=0;
+		// sg_clear_area( 2+sx, vkb_basey-rsx, 40, 8);
+		sg_drawtex( rec_tex, 2+sx, vkb_basey-rsy, 0, 255*rec, 55, 55, 255);
+	}
+
+	sg_rect rrec={2+sx, vkb_basey-rsy, rsx, rsy, 0,0,0,0, 0,0};
+	sg_drawperim(rrec);
+	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, rrec)){
+		Mouse.b0=0;
+		gup_rec=1;
+		rec=!rec;
+	}
 }
 
 
@@ -1197,16 +1224,20 @@ if (kbget(SDLK_UP)){ //kbset(SDLK_UP, 0);
 	key_delay++;
 	if(key_delay==0){ key_delay=-6;
 		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-			G.syn->seq[_isel].spb=MIN(G.syn->seq[_isel].spb+1, SEQ_LEN);gup_spb=1;}
-		else {step_add++;gup_step_add=1;}
+			G.syn->seq[_isel].spb=MIN(G.syn->seq[_isel].spb+1, SEQ_LEN);
+			gup_spb=1;
+			gup_seq=1;
+		} else {step_add++;gup_step_add=1;}
 	}
 }
 if (kbget(SDLK_DOWN )){ //kbset(SDLK_DOWN, 0);
 	key_delay++;
 	if(key_delay==0){ key_delay=-6;
 		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-			G.syn->seq[_isel].spb=MAX(G.syn->seq[_isel].spb-1, 1)      ;gup_spb=1;}
-		else if(step_add>0) {step_add--; gup_step_add=1;}
+			G.syn->seq[_isel].spb=MAX(G.syn->seq[_isel].spb-1, 1);
+			gup_spb=1;
+			gup_seq=1;
+		} else if(step_add>0) {step_add--; gup_step_add=1;}
 	}
 }
 
@@ -2053,16 +2084,7 @@ void free_tex( sg_tex* t ){ assert(t);
 
 
 
-int C0 = 0 -9 -12*4;
-#define MAX_KEYS (12*9)
-noteid voices[MAX_KEYS];
 
-char voices_inited=0;
-void init_voices(void){
-	voices_inited=1;
-	for(int i=0; i<MAX_KEYS;i++)
-		voices[i] = (noteid){-1, -1};
-}
 
 
 char ptbox( int x, int y, sg_rect r){
@@ -2079,7 +2101,7 @@ char ptbox( int x, int y, sg_rect r){
 }
 
 int isel(int i){
-	if(!voices_inited)init_voices();
+	// if(!voices_inited)init_voices();
 	char ret = _isel;
 	if(i>=0 && i<SYN_TONES) {
 		_isel = i;
@@ -2130,7 +2152,7 @@ int commit_step_end=0;
 
 
 void key_update(int key, char on){
-	if(!voices_inited)init_voices();
+	// if(!voices_inited)init_voices();
 
 	int keyi = (key-C0)%MAX_KEYS;
 	if(keyi<0) keyi+=MAX_KEYS-1;

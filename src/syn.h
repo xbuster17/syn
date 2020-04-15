@@ -19,7 +19,7 @@
 #include "adsr.h"
 
 #define SYN_TONES 12
-#define POLYPHONY 6
+#define POLYPHONY 3
 #define OSC_PER_TONE 6 // min 3
 #define VEL_OUT 4
 #define ARP_LEN 32
@@ -183,6 +183,7 @@ float syn_a4(syn*s , float a4hz);
 
 //seq control
 void syn_pause(syn* s);
+void syn_stop(syn* s);
 float syn_bpm(syn*s , float bpm); // bpm<0 to avoid setting
 
 // osc fm

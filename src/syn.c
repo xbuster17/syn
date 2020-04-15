@@ -514,6 +514,15 @@ void syn_pause(syn* s){ assert(s);
 	s->seq_play = !s->seq_play;
 	for(int i=0; i<SYN_TONES; i++){
 		syn_anof(s, i);
+		// s->seq[i].time = 0;
+		// s->seq[i].step = -1;
+	}
+}
+
+void syn_stop(syn* s){ assert(s);
+	s->seq_play = 0;
+	for(int i=0; i<SYN_TONES; i++){
+		syn_anof(s, i);
 		s->seq[i].time = 0;
 		s->seq[i].step = -1;
 	}
