@@ -19,7 +19,7 @@
 #include "adsr.h"
 
 #define SYN_TONES 12
-#define POLYPHONY 3
+#define POLYPHONY 6
 #define OSC_PER_TONE 6 // min 3
 #define VEL_OUT 4
 #define ARP_LEN 32
@@ -48,7 +48,7 @@ typedef struct {
 	float phase[OSC_PER_TONE];
 	float time [POLYPHONY][OSC_PER_TONE];
 
-	int16_t freq[POLYPHONY];
+	float freq[POLYPHONY];
 
 	syn_mod_mat mod_mat;
 	// [i][i] is the freq_ratio of operator i
@@ -58,7 +58,7 @@ typedef struct {
 	// [0][j] stores osc mix for osc>0 [1][2] for osc 0
 
 
-	int8_t vel[POLYPHONY];
+	uint8_t vel[POLYPHONY];
 	// float* vel_out[VEL_OUT];
 	// float vel_min[VEL_OUT];
 	// float vel_max[VEL_OUT];
@@ -101,25 +101,37 @@ typedef struct {
 	// syn_arp arp;
 } syn_tone;
 
-
+#define SEQ_MIN_NOTE (-32000)
 typedef struct {
 	syn_tone* tone; // tone preset
-	syn_mod_mat* modm[SEQ_LEN]; // mod matrix per step
+	// syn_mod_mat* modm[SEQ_LEN]; // mod matrix per step
+	syn_mod_mat** modm; // mod matrix per step
 	short modm_target_step;
 	char modm_wait_loop;
 	uint8_t len;
 	uint8_t spb; // step per beat
 	int8_t step;
 	float time;
-	float freq[POLYPHONY][SEQ_LEN];
+	// float freq[POLYPHONY][SEQ_LEN];
+	int16_t note[POLYPHONY][SEQ_LEN];
 	uint8_t vel[POLYPHONY][SEQ_LEN];
-	uint8_t dur[SEQ_LEN];
+	uint8_t dur[POLYPHONY][SEQ_LEN];
 	noteid active[POLYPHONY]; // internal only, notes currently playing
 	char mute;
 } syn_seq;
 
+// #define SONG_MAX 0xFF
+// typedef struct {
+// 	int len;
+// 	int cap;
+// 	syn_seq seqs;
+// 	int index;
+// 	int repeat;
+// 	short loop_start;
+// 	short loop_end;
+// } syn_song;
 
-typedef struct {
+typedef struct syn{
 	int sample;
 	float a4;
 	int sr;
@@ -156,15 +168,7 @@ typedef struct {
 //step sequencer
 	float bpm;
 	char seq_play;
-	// char seq_rec;
-	// int seq_step_sel;
-	// int seq_tone_sel;
 	syn_seq seq[SYN_TONES];
-
-	// test note history for mono mode
-	// float note_history[SYN_TONES][HISTORY_LEN];
-	// int8_t note_history_i[SYN_TONES];
-	// syn_seq* song[64];
 } syn;
 
 void syn_init(syn* s, int sr);
@@ -207,7 +211,7 @@ float tone_pdexp(syn_tone* t, float de); // <0 to avoid setting, 1.0:linear to 0
 //sequencer
 void syn_seq_init(syn_seq* s);
 void syn_seq_advance(syn* s, float secs);
-void seq_non(syn_seq* s, int pos, float note, float vel, float dur);
+char seq_non(syn_seq* s, int pos, float note, float vel, float dur); // returns 1 if note couldnt be added
 void seq_nof(syn_seq* s, int pos, int voice);
 void seq_anof(syn_seq* s, int pos);
 void seq_clear(syn_seq* s);
@@ -240,5 +244,16 @@ void syn_modm_do_lerp(syn_mod_mat* dst, syn_mod_mat* src, float t);
 void syn_load_seq(syn*, syn_seq*);
 
 float* syn_modm_addr(syn_mod_mat*, int carrier, int modulator); // c=m to get ratio, m<0 to get oscmix
+
+
+
+void syn_song_load(syn* syn, void* data, int len);
+void syn_seq_load(syn* syn, void* data, int len);
+
+
+
+
+
+
 
 #endif

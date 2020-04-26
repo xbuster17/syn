@@ -3,7 +3,7 @@
 
 void syn_init(syn* s, int sr){
 	smath_init();
-
+	memset(s, 0, sizeof(syn));
 	s->mutex = SDL_CreateMutex();
 	if(!s->mutex) fprintf(stderr, "Couldn't create mutex\n");
 
@@ -29,6 +29,7 @@ void syn_init(syn* s, int sr){
 			s->tone[i].pitch_env_amt = 0;
 
 			s->tone[i].vel[j] = 0;
+			s->tone[i].freq[j] = 0;
 
 			s->tone[i].gate[j]=0;
 			s->tone[i].pitch_state[j]=0;
@@ -36,6 +37,7 @@ void syn_init(syn* s, int sr){
 			for(int k=0; k<OSC_PER_TONE; k++){
 				s->tone[i].amp_state[j][k]=0;
 				s->tone[i].amp_eg_out[j][k]=0;
+				s->tone[i].time[j][k]=0;
 			}
 
 		}
@@ -76,6 +78,10 @@ void syn_seq_init(syn_seq* s){
 	for (int i = 0; i < POLYPHONY; ++i){
 		s->active[i] = (noteid){-1,-1};
 	}
+	for (int i = 0; i < POLYPHONY; ++i)
+		for (int j = 0; j < SEQ_LEN; ++j)
+			s->note[i][j] = SEQ_MIN_NOTE;
+
 	s->spb=SEQ_STEP_PER_BEAT_DEF;
 	s->len=MIN(SEQ_LEN, 16);
 	s->time=0;
@@ -83,7 +89,10 @@ void syn_seq_init(syn_seq* s){
 
 	s->tone = NULL;
 	s->modm_target_step=-1;
-	memset(s->modm, 0, sizeof(syn_mod_mat*)*SEQ_LEN);
+	s->modm = malloc(sizeof(syn_mod_mat*)*SEQ_LEN);
+	for(int i=0;i<SEQ_LEN;i++)
+		s->modm[i]=NULL;
+	// memset(s->modm, 0, sizeof(syn_mod_mat*)*SEQ_LEN);
 	s->modm_wait_loop=0;
 }
 
@@ -159,11 +168,11 @@ void syn_seq_advance(syn* s, float secs){
 
 		float nort = s->seq[i].time-floor(s->seq[i].time);
 		for (int j = 0; j < POLYPHONY; j++){
-			char tie = prev_step!=-1? s->seq[i].dur[prev_step] > 250 : 0;
+			char tie = prev_step!=-1? s->seq[i].dur[j][prev_step] > 250 : 0;
 			if(s->seq[i].mute) tie=0;
 
 			// check for note expiration
-			if((nort > s->seq[i].dur[s->seq[i].step]/250.f) && (!tie) && (prev_step == s->seq[i].step) && (s->seq[i].active[j].voice > -1)){
+			if((nort > s->seq[i].dur[j][s->seq[i].step]/250.f) && (!tie) && (prev_step == s->seq[i].step) && (s->seq[i].active[j].voice > -1)){
 				syn_nof(s, s->seq[i].active[j]);
 				s->seq[i].active[j] = (noteid){-1,-1};
 			}
@@ -175,21 +184,21 @@ void syn_seq_advance(syn* s, float secs){
 				s->seq[i].active[j] = (noteid){-1,-1};
 			}
 
-			if(s->seq[i].freq[j][s->seq[i].step]>0){
+			if(s->seq[i].note[j][s->seq[i].step]>SEQ_MIN_NOTE){
 
 				if(!tie && !s->seq[i].mute)
-					s->seq[i].active[j] = syn_non(s, i, 0, 0);
-				syn_nfreq(s, s->seq[i].active[j], s->seq[i].freq[j][s->seq[i].step]);
+					s->seq[i].active[j] = syn_non(s, i, s->seq[i].note[j][s->seq[i].step], 0);
+				// 	s->seq[i].active[j] = syn_non(s, i, 0, 0);
+				// syn_nfreq(s, s->seq[i].active[j], freqn(s->seq[i].note[j][s->seq[i].step]));
 				syn_nvel(s, s->seq[i].active[j], s->seq[i].vel[j][s->seq[i].step]);
 			}
 
 		}
+
 		if(prev_step == s->seq[i].len-1 && step == 0){
 			s->seq[i].modm_target_step = 0;
 			s->seq[i].modm_wait_loop = 0;
-
 		}
-
 	}
 }
 
@@ -235,7 +244,7 @@ float tone_omix(syn_tone* t, int osc, float mix){
 
 
 // len: number of stereo samples to process
-void syn_run(syn* s, float* buffer, int len){
+void syn_run(syn* s, float* buffer, int len){ assert(s && buffer);
 	syn_lock(s,1);
 	float a[OSC_PER_TONE];
 
@@ -260,15 +269,8 @@ void syn_run(syn* s, float* buffer, int len){
 
 		for (int j=0; j<POLYPHONY; j++){
 
-			float vel = CLAMP(s->tone[i].vel[j], 0.0, 1.0);
+			float vel = s->tone[i].vel[j]/255.f;
 
-			// for(int vi=0; vi < VEL_OUT; vi++){
-			// 	float* vo = s->tone[i].vel_out[vi];
-			// 	if(!vo) continue;
-			// 	*vo = MAPVAL( vel , 0.0, 1.0, s->tone[i].vel_min[vi], s->tone[i].vel_max[vi] );
-			// }
-
-			// if(s->tone[i].osc_env[j].state==0){
 			int any_on =0;
 			for(int osc =0; osc<OSC_PER_TONE; osc++)
 				any_on += s->tone[i].amp_state[j][osc] != 0;
@@ -296,24 +298,9 @@ void syn_run(syn* s, float* buffer, int len){
 
 				float pitch_env = adsr_run(&s->tone[i].pitch_env)*s->tone[i].pitch_env_amt;
 
-				// s->tone[i].gate[j]         = s->tone[i].pitch_env.gate;
 				s->tone[i].pitch_state[j]  = s->tone[i].pitch_env.state;
 				s->tone[i].pitch_eg_out[j] = s->tone[i].pitch_env.out;
 
-
-				// if(s->tone[i].osc_env[j].state==0){
-				// 	if(s->tone[i].freq[j] > 0) s->tone[i].voices--;
-				// 	s->tone[i].freq[j]=0;
-				// 	break;
-				// }
-
-				//glide
-				// if(s->tone[i].glide_t < s->tone[i].glide)
-				// 	if(s->tone[i].poly_type == 0){
-				// 		s->tone[i].freq[j] = lerp(s->tone[i].freq[j], s->tone[i].glide_freq_target,
-				// 			MAPVAL(s->tone[i].glide_t, 0, s->tone[i].glide, 0, 1) );
-				// 		s->tone[i].glide_t += 1.0/s->sr;
-				// 	}
 
 				for(int osc=0; osc<OSC_PER_TONE; osc++){
 					if(s->tone[i].amp_state[j][osc] == 0) continue;
@@ -321,9 +308,10 @@ void syn_run(syn* s, float* buffer, int len){
 					s->tone[i].osc_env[osc].gate =     s->tone[i].gate[j];
 					s->tone[i].osc_env[osc].state =    s->tone[i].amp_state[j][osc];
 					s->tone[i].osc_env[osc].out =      s->tone[i].amp_eg_out[j][osc];
+
 					float osc_env = adsr_run(&s->tone[i].osc_env[osc]);
+
 					s->tone[i].amp_state[j][osc]   = s->tone[i].osc_env[osc].state;
-					// s->tone[i].gate[j]             = s->tone[i].osc_env[osc].gate;
 					s->tone[i].amp_eg_out[j][osc]  = s->tone[i].osc_env[osc].out;
 
 					if(osc_env<=0) continue;
@@ -353,17 +341,18 @@ void syn_run(syn* s, float* buffer, int len){
 					if(s->tone[i].time[j][osc]<0) s->tone[i].time[j][osc] +=1;
 
 					a[osc] *= osc_env;
+					// a[osc] *= vel;
 
 					// accum carriers
-					oscaccum += a[osc] * tone_omix(s->tone+i, osc, -1);
+					oscaccum += a[osc] * vel * tone_omix(s->tone+i, osc, -1);
 				}
 				oscaccum *= s->tone[i].gain;
 
 				s->tone[i].vupeakl = MAX(fabsf(s->tone[i].vupeakl), oscaccum);
 				s->tone[i].vupeakr = MAX(fabsf(s->tone[i].vupeakr), oscaccum);
-				// oscaccum = ( a[1] )*s->tone[i].gain*osc_env; // alg1
-				buffer[smp] += oscaccum/* * s->tone[i].level[j]*/; smp++;
-				buffer[smp] += oscaccum/* * s->tone[i].level[j]*/; smp++;
+
+				buffer[smp] += oscaccum; smp++;
+				buffer[smp] += oscaccum; smp++;
 
 			}
 		}
@@ -426,7 +415,7 @@ noteid syn_non(syn* s, int instr, float note, float vel){ // note: semitone dist
 	s->tone[tone].pitch_state[voice] = 1;
 
 	s->tone[tone].freq[voice] = freq;
-	s->tone[tone].vel[voice] = vel;
+	s->tone[tone].vel[voice] = vel*255;
 		// s->tone[tone].glide_freq_target = freq;
 		// s->tone[tone].glide_t = s->tone[tone].glide;
 
@@ -530,34 +519,47 @@ void syn_stop(syn* s){ assert(s);
 
 
 void syn_lock(syn* s, char l){ assert(s);
+	int status =0 ;
 	if(l){
-		if(SDL_LockMutex(s->mutex)!=0) {fprintf(stderr, "Couldn't lock mutex\n");}
+		// status = SDL_TryLockMutex(s->mutex);
+		status = SDL_LockMutex(s->mutex);
+		switch(status) {
+			case SDL_MUTEX_TIMEDOUT: fprintf(stderr, "Couldn't lock mutex (TIMEOUT)\n");
+			case 0: break;
+			default : fprintf(stderr, "Couldn't lock mutex\n");
+		}
+		// if(SDL_LockMutex(s->mutex)!=0) {fprintf(stderr, "Couldn't lock mutex\n");}
 	} else
 		SDL_UnlockMutex(s->mutex);
 }
 
 
-void seq_non(syn_seq* s, int pos, float note, float vel, float dur){ assert(s);
-	pos = CLAMP(pos, 0, s->len);
+char seq_non(syn_seq* s, int pos, float note, float vel, float dur){ assert(s);
+	pos = CLAMP(pos, 0, SEQ_LEN);
 	int voice = -1;
 	for(int i =0; i<POLYPHONY; i++){
-		if( s->freq[i][pos] > 0 ) continue;
+		// if( s->freq[i][pos] > 0 ) continue;
+		if( s->note[i][pos] > SEQ_MIN_NOTE ) continue;
 		voice = i;
 		break;
 	}
-	if(voice==-1) return;
+	if(voice==-1) return 1;
 
-	float freq = freqn(note);
-	s->freq[voice][pos]=freq;
+	// float freq = freqn(note);
+	// s->freq[voice][pos]=freq;
+	s->note[voice][pos]=note;
 	s->vel[voice][pos]=vel*255;
-	s->dur[pos]=dur*255;
+	s->dur[voice][pos]=dur*255;
+	return 0;
 }
 
 void seq_nof(syn_seq* s, int pos, int voice){ assert(s);
-	pos = CLAMP(pos, 0, s->len);
+	pos = CLAMP(pos, 0, SEQ_LEN);
+	if(voice<0) return;
 	voice = CLAMP(voice, 0, POLYPHONY);
-	s->freq[voice][pos] = 0;
-	s->dur[pos] = 0;
+	// s->freq[voice][pos] = 0;
+	s->note[voice][pos] = SEQ_MIN_NOTE;
+	s->dur[voice][pos] = 0;
 	s->vel[voice][pos] = 0;
 }
 
@@ -577,7 +579,8 @@ void seq_clear(syn_seq* s){ assert(s);
 char seq_ison(syn_seq* s, int pos, int voice){ assert(s);
 	pos = CLAMP(pos, 0, s->len);
 	voice = CLAMP(voice, 0, POLYPHONY);
-	return s->freq[voice][pos] > 0;
+	// return s->freq[voice][pos] > 0;
+	return s->note[voice][pos] > SEQ_MIN_NOTE;
 }
 
 char seq_isempty(syn_seq* s, int pos){ assert(s);
@@ -739,6 +742,7 @@ void seq_unload(syn_seq* s){ assert(s);
 			s->modm[i] = NULL;
 		}
 	}
+	free(s->modm);
 }
 
 

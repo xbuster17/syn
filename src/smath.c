@@ -74,7 +74,7 @@ float pul(float t, float d){
 static uint32_t i32offset = 2166136261;
 static uint32_t i32prime = 16777619;
 
-uint32_t hashi32(uint32_t x){
+uint32_t syn_hashi32(uint32_t x){
 	uint32_t hash = i32offset;
 	// for(int i = 0; i<4; i++){
 	int i = 0;
@@ -91,8 +91,8 @@ uint32_t hashi32(uint32_t x){
 }
 
 float wnoiz(float t){
-	uint32_t i = hashi32(UINT_MAX*t);
-	uint32_t j = hashi32(UINT_MAX*t+1);
+	uint32_t i = syn_hashi32(UINT_MAX*t);
+	uint32_t j = syn_hashi32(UINT_MAX*t+1);
 	float ret = lerp(((float)i)/UINT_MAX,((float)j)/UINT_MAX, fmodf(t,1));
 	return ret*2-1;
 	return ((float)i)/UINT_MAX*2-1;

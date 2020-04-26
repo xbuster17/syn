@@ -3,7 +3,7 @@ JOBS=4
 EXEC = syn
 MAIN = src/main.c
 
-CCFLAG = -std=gnu99 -g -O3 -Wall -Wextra -Wno-psabi -Wno-implicit-fallthrough -ffast-math -funroll-loops -D _DEFAULT_SOURCE
+CCFLAG = -std=gnu99 -g -O3 -Wall -Wextra -Wno-psabi -ffast-math -funroll-loops -D _DEFAULT_SOURCE
 CPPCFLAG = -std=gnu++11 -Wall -Wextra -g -O3
 
 LFLAG = $(CCFLAG)
@@ -16,7 +16,7 @@ PKG_CONFIG = $(CROSS)pkg-config
 SDL2_CONFIG = $(CROSS)sdl2-config
 
 LIBS = -lm $(WIN_LIBS) \
-       $(shell $(PKG_CONFIG) --cflags --libs SDL2_ttf)\
+       $(shell $(PKG_CONFIG) --cflags --libs SDL2_ttf SDL2_mixer)\
        $(shell $(SDL2_CONFIG) --cflags --libs)\
 
 SRC = $(wildcard src/*.c)
@@ -75,7 +75,7 @@ rund:
 #______________________________________________________________________________
 # WINDOWS - mxe
 WIN_EXEC = $(EXEC).exe
-WIN_FLAG = CROSSOBJ=win. CROSS=i686-w64-mingw32.static- EXEC=$(WIN_EXEC) WIN_LIBS="-lpthread "
+WIN_FLAG = CROSSOBJ=win. CROSS=i686-w64-mingw32.static- EXEC=$(WIN_EXEC) WIN_LIBS=""
 # WIN_FLAG = CROSSOBJ=win CROSS=x86_64-w64-mingw32.static-
 
 win:

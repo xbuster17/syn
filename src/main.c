@@ -49,9 +49,9 @@
 #define BASE_SCREEN_HEIGHT 240
 #endif
 
-static int screen_width =BASE_SCREEN_WIDTH;
-static int screen_height=BASE_SCREEN_HEIGHT;
-int octave=0;
+int screen_width =BASE_SCREEN_WIDTH;
+int screen_height=BASE_SCREEN_HEIGHT;
+int octave=4;
 
 /* -------------------------------------------------------------------------- */
 /* use this api for graphics */
@@ -83,6 +83,7 @@ void sg_texsize( int16_t tex, int* x, int* y);
 void sg_drawtex( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void sg_drawtext( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void sg_clear_area(int x, int y, int w, int h);
+void sg_target(SDL_Texture*);
 
 char ptbox( int x, int y, sg_rect r); // point-box collision check
 int isel(int i); // select active instrument
@@ -106,7 +107,10 @@ struct {
 	SDL_Renderer* renderer;
 	int window_focus;
 	syn* syn;
-	SDL_Texture* screen_tex;
+	// SDL_Texture* screen_tex;
+	SDL_Texture* current_target_tex;
+	SDL_Texture* tone_view_tex;
+	SDL_Texture* pattern_view_tex;
 	float time; // seconds
 	float dt;
 } G;
@@ -136,6 +140,7 @@ struct {
 #ifndef _3DS
 	static inline size_t auformat_size( SDL_AudioFormat format){ return SDL_AUDIO_BITSIZE(format)/8; }
 	int sample_rate = 48000;
+	// int sample_rate = 44100;
 	int samples_size = 256;
 #else
 	static inline size_t auformat_size( Uint16 format){ return 2; } // AUDIO_S16SYS
@@ -145,7 +150,8 @@ struct {
 #endif
 
 int C0 = 0 -9 -12*4;
-#define MAX_KEYS (12*9)
+#define MAX_OCTAVE 10
+#define MAX_KEYS (12*MAX_OCTAVE)
 noteid voices[MAX_KEYS];
 
 
@@ -207,13 +213,13 @@ void maincb(void* userdata, uint8_t* stream, int length){
 	memset(buffer, 0, sizeof(buffer));
 	memset(stream, 0, length);
 	short* out=(short*)stream;
+	// float* out=(float*)stream;
 
 	syn_run(userdata, buffer, smp/2);
 
 	int totsmp = ((float)length) / auformat_size(G.auhave.format);
 
 	sample+=totsmp/2;
-
 	// float dtime = .1;
 	// float dfeedb = .7;
 
@@ -237,11 +243,11 @@ void maincb(void* userdata, uint8_t* stream, int length){
 	while(i < totsmp){ // output
 		// if(fabs(s[i])>1) printf("hard clip!\n");
 		// out[i] = (short)(s[i] * (2<<14)); i++;
-		out[i] = (short)(CLAMP(longbufl[getlongbuf_index(floor(i/2))], -1, 1) * (2<<14)); i++;
+		out[i] = (signed short)(CLAMP(longbufl[getlongbuf_index(floor(i/2))], -1, 1) * (2<<14)); i++;
 		// out[i] = CLAMP(longbufl[getlongbuf_index(floor(i/2))], -1, 1); i++;
 		// if(fabs(s[i])>1) printf("hard clip!\n");
 		// out[i] = (short)(s[i] * (2<<14)); i++;
-		out[i] = (short)(CLAMP(longbufr[getlongbuf_index(floor(i/2))], -1, 1) * (2<<14)); i++;
+		out[i] = (signed short)(CLAMP(longbufr[getlongbuf_index(floor(i/2))], -1, 1) * (2<<14)); i++;
 		// out[i] = CLAMP(longbufr[getlongbuf_index(floor(i/2))], -1, 1); i++;
 	}
 }
@@ -280,8 +286,9 @@ void audevlist(void){}
 char* wname = "syn";
 #ifdef _3DS
 int wflag = SDL_CONSOLEBOTTOM; ///*SDL_WINDOW_RESIZABLE*/ SDL_WINDOW_SHOWN;
-#else
-int wflag = SDL_WINDOW_RESIZABLE;
+#else\
+// fixme ms windows
+int wflag = SDL_WINDOW_RESIZABLE;///*SDL_WINDOW_FULLSCREEN_DESKTOP|*/ /*SDL_WINDOW_BORDERLESS |*/ SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN;
 #endif
 
 SDL_Joystick* joystick=NULL;
@@ -300,8 +307,9 @@ struct {
 	char b0,b1,b2; // left, right, middle
 	int wx,wy; // wheel
 	int wtx,wty; // wheel total
-	int32_t px,py;
-	int32_t dx,dy;
+	float px,py;
+	float dx,dy;
+	float sdx,sdy; // scaled delta, based on window size, use when needing smaller resolutions
 } Mouse;
 
 #define MAX_FINGER 11
@@ -363,6 +371,7 @@ int rflag = SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED | SDL_RENDERER_
 		SDL_Log("E:%s\n", SDL_GetError());
 		return 1;
 	}
+SDL_SetRenderDrawBlendMode(G.renderer, SDL_BLENDMODE_BLEND);
 
 	SDL_GameControllerEventState(SDL_ENABLE);
 	joystick = SDL_NumJoysticks()>0 ? SDL_JoystickOpen(0) : NULL;
@@ -379,14 +388,17 @@ int rflag = SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED | SDL_RENDERER_
 	joystick = SDL_JoystickOpen(0);
 
 #endif // _3DS
-
-	G.screen_tex = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, screen_width, screen_height);
-	SDL_SetRenderTarget(G.renderer, G.screen_tex);
-	sg_clear();
+sg_target(G.tone_view_tex);
+	G.tone_view_tex = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, screen_width, screen_height);
+	sg_target(G.tone_view_tex);
+	// sg_clear();
+	G.pattern_view_tex = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, screen_width, screen_height);
+	sg_target(G.pattern_view_tex);
+	// sg_clear();
 #if 1 // sdl audio
 	G.auwant.freq     = sample_rate;
 	// G.auwant.format   = AUDIO_F32SYS;
-	G.auwant.format   = AUDIO_S16;
+	G.auwant.format   = AUDIO_S16SYS;
 	G.auwant.channels = 2;
 	G.auwant.samples  = samples_size;
 	G.auwant.callback = maincb;
@@ -401,7 +413,8 @@ int rflag = SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED | SDL_RENDERER_
 			G.audio_running = 1;
 			SDL_PauseAudioDevice(G.audev, 0);
 		}
-	SDL_Log("sizeof syn: %li\n", sizeof(syn) );
+	// SDL_Log("sizeof syn: %li\n", sizeof(syn) );
+	// SDL_Log("sizeof syn_song: %li\n", sizeof(syn_song) );
 	#else //_3DS
 		G.audev = SDL_OpenAudio(&G.auwant, &G.auhave);
 		if(G.audev < 0){
@@ -421,13 +434,15 @@ int rflag = SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED | SDL_RENDERER_
 #else // sdl mixer
 
 	Mix_Init( /*MIX_INIT_FLAC | MIX_INIT_MOD | MIX_INIT_MP3 | MIX_INIT_OGG*/ 0 );
-	if ( Mix_OpenAudio ( 48000, AUDIO_S16SYS, 2, 256 ) == -1) {
+	// if ( Mix_OpenAudio ( sample_rate, AUDIO_S16SYS, 2, samples_size ) == -1) {
+	if ( Mix_OpenAudio ( sample_rate, AUDIO_F32SYS, 2, samples_size ) == -1) {
 		printf("Mix_openAudio: %s\n", Mix_GetError());
 	}
-	G.auhave.freq     = 48000;
-	G.auhave.format   = AUDIO_S16SYS;
+	G.auhave.freq     = sample_rate;
+	// G.auhave.format   = AUDIO_S16SYS;
+	G.auhave.format   = AUDIO_F32SYS;
 	G.auhave.channels = 2;
-	G.auhave.samples  = 256;
+	G.auhave.samples  = samples_size;
 	// G.auhave.callback = maincb;
 
 	Mix_AllocateChannels(8);
@@ -491,7 +506,7 @@ int main(int argc, char**argv){ (void)argv, (void)argc;
 
 	sg_init();
 
-	SDL_SetRenderTarget(G.renderer, G.screen_tex);
+	// SDL_SetRenderTarget(G.renderer, G.tone_view_tex);
 
 	#ifdef __EMSCRIPTEN__
 		emscripten_set_main_loop(main_loop, 24, 1);
@@ -553,6 +568,8 @@ sg_rect fillRect;
 int _isel=0;
 int beat=0;
 int pbeat=0;
+int step=0;
+int pstep=0;
 float tap_tempo = -1;
 int tap_tempo_key = SDLK_KP_MINUS;
 float tap_tempo_min_bpm = 20.0; // will cancel tap_tempo if resulting bpm would be lower than this
@@ -584,7 +601,7 @@ char request_quit=0;
 int vkb_note = 0;
 char vkb_note_active;
 
-/* main gui */
+/* tone gui */
 char gup_bpm=1;
 char gup_step_add=1;
 char gup_spb=1;
@@ -593,6 +610,17 @@ char gup_seq=1;
 char gup_osc=1;
 char gup_rec=1;
 char gup_vkb=1;
+char gup_shown_notes=1; // which notes are drawn in the pattern view
+char gup_step_bar=1; // pattern view
+char gup_note_grid=1;
+
+int note_scrollv=12*4;
+int note_scrollh=0;
+float note_scrollh_vel=0;
+float note_scrollh_pos=0;
+int note_cols[SYN_TONES][SEQ_LEN]; // collumns for step bar
+
+
 char rec=0;
 char gup_mlatch=1; // updates the value mouse is latched to
 int16_t knob_tex;
@@ -610,6 +638,9 @@ char wave_text[OSC_MAX][10]={
 int16_t seq_step_tex;
 
 int16_t rec_tex;
+
+int16_t step_bar_tex[SEQ_LEN];
+int16_t Cn_tex[MAX_OCTAVE];
 
 #ifndef __vita__
 #define knob_size 13
@@ -636,11 +667,14 @@ float* phony_latch_isel= (float*)1;
 float* phony_latch_seq = (float*)2;
 float* phony_latch_bpm = (float*)3;
 float* phony_latch_vkb = (float*)4;
+float* phony_latch_scrollv = (float*)5;
+float* phony_latch_scrollh = (float*)6;
+float* phony_latch_note_grid = (float*)7;
 
 int giselh=16; // height of intrument select / instrument vumeter
 int giselw=16;
 int gseq_basey=0;
-int gseqh=32+1;
+int gseqh=POLYPHONY*6;
 int gosc_basey=0;
 int gosch=16;
 // int gmodm_basex=0;
@@ -659,6 +693,9 @@ void gui_init(void){
 	memset( bpm_text,0,16);
 	memset( step_add_text,0,16);
 	memset( spb_text,0,16);
+	for(int i=0; i<SYN_TONES; i++)
+		for(int j=0; j<SEQ_LEN; j++)
+			note_cols[i][j]=0;
 
 	for(int i = 0; i<OSC_MAX; i++)
 		wave_tex[i] = sg_addtext(wave_text[i]);
@@ -684,6 +721,21 @@ void gui_init(void){
 
 		}
 	}
+
+// int16_t step_bar_tex[SEQ_LEN];
+// int16_t Cn_tex[MAX_OCTAVE];
+	char tex_text[8]; memset(tex_text, 0, sizeof(tex_text));
+
+	for (int i = 0; i < SEQ_LEN; ++i){
+		snprintf(tex_text, 8, "%i", i);
+		step_bar_tex[i] = sg_addtext(tex_text);
+	}
+
+	for (int i = 0; i < MAX_OCTAVE; ++i){
+		snprintf(tex_text, 8, "C%i", i);
+		Cn_tex[i] = sg_addtext(tex_text);
+	}
+
 	quitd_tex = sg_addtext(quitd_text);
 	quitd_tex_yes = sg_addtext(quitd_text_yes);
 	quitd_tex_no = sg_addtext(quitd_text_no);
@@ -714,7 +766,9 @@ void gui_init(void){
 
 
 
-
+int gui_view = 0;
+void gui_toneview(void);
+void gui_patternview(void);
 
 double _time=0;
 double _prev_time=0;
@@ -735,548 +789,44 @@ void main_loop(void){
 
 		input_update();
 
-		beat = G.syn->seq[0].step/4;
+		step = G.syn->seq[_isel].step;
+		beat = step/G.syn->seq[_isel].spb;
 
-
-
-
-
-/*----------------------------------------------------------------------------*/
-/* GUI */
-/*----------------------------------------------------------------------------*/
-
-// isel
-int giselendx = giselw*SYN_TONES + (giselw/8)*MAX(SYN_TONES/4-1,1);
-// sg_clear_area(0,0, giselw*(SYN_TONES+SYN_TONES/8) , giselh);
-sg_clear_area(0,0, giselendx , giselh);
-int isel_padding=0;
-for(int i=0; i<SYN_TONES; i++){
-	if((i!=0) && ((i%4)==0)) isel_padding+=giselw/8;
-	sg_rect r;
-	r.x=isel_padding;
-	r.y=0;
-	r.w=giselw;
-	r.h=giselh;
-	if((!mlatch || (mlatch==phony_latch_isel)) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r))
-		{isel(i); mlatch=phony_latch_isel;}
-	r.r=(_isel==i) * 255;
-	r.g=seq_mute(G.syn->seq+i, -1)? 55: 55-r.r;
-	r.b=seq_mute(G.syn->seq+i, -1)? 55: 255;
-	r.a=255;
-	isel_padding+=giselw;
-	sg_drawperim(r);
-	// VUmeter
-	r.x++;
-	r.w=r.w/2-2;
-	r.y=giselh - (G.syn->tone[i].vupeakl * giselh)-1;
-	r.h=giselh - r.y-1;
-	sg_rcol(&r, MIN(G.syn->tone[i].vupeakl, 1.0), MAX(1-G.syn->tone[i].vupeakl, 0),0,1);
-	sg_drawrect(r);
-	r.x=r.x+r.w+2;
-	r.y=giselh - (G.syn->tone[i].vupeakr * giselh)-1;
-	r.h=giselh - r.y-1;
-	sg_rcol(&r, MIN(G.syn->tone[i].vupeakr, 1.0), MAX(1-G.syn->tone[i].vupeakr, 0),0,1);
-	sg_drawrect(r);
-}
-int gbpmw = 76;
-// bpm mouse
-if( (!mlatch || (mlatch == phony_latch_bpm)) && Mouse.b0){
-	// sg_rect r = {giselw*(SYN_TONES+SYN_TONES/4)+4, 0, 70, 16, 0,0,0,0, 0,0};
-	sg_rect r = {giselendx+5, 0, gbpmw, 16, 0,0,0,0, 0,0};
-	if((mlatch == phony_latch_bpm) || ptbox(Mouse.px, Mouse.py, r)){
-		int shift = kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT);
-		float bpm = syn_bpm(G.syn, -1);
-		syn_bpm(G.syn, bpm + ((float)Mouse.dx)/( shift? 100.0 : 1.0 ));
-		gup_bpm=1;
-		mlatch = phony_latch_bpm;
-	}
-}
-// bpm
-if(gup_bpm){
-	gup_bpm = 0;
-	snprintf( bpm_text, 8+4+2, "bpm:%3.3f", syn_bpm(G.syn, -1));
-	sg_modtext( bpm_tex, bpm_text);
-	// sg_clear_area( giselw*(SYN_TONES+SYN_TONES/4)+4, 0, 76, 8);
-	sg_clear_area( giselendx+5, 0, gbpmw, 8);
-	// sg_drawtex( bpm_tex, giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 0, 255, 255, 255, 255);
-	sg_drawtex( bpm_tex, giselendx+5, 0, 0, 255, 255, 255, 255);
-}
-{ // bpm light
-	// sg_rect r = {giselw*(SYN_TONES+SYN_TONES/4)+1, 1, 2, 6, beat!=pbeat?255:50, 50+(tap_tempo>0? 200 : 0), 50, 255, 0,0};
-	sg_rect r = {giselendx+1, 1, 3, 6, beat!=pbeat?255:50, 50+(tap_tempo>0? 200 : 0), 50, 255, 0,0};
-	sg_drawrect( r );
-}
-// pattern step add
-if(gup_step_add){
-	gup_step_add = 0;
-	snprintf( step_add_text, 8+4, "add:%i", step_add);
-	sg_modtext( step_add_tex, step_add_text);
-	sg_clear_area( giselendx+5 +gbpmw, 8, 64, 8);
-	sg_drawtex( step_add_tex, giselendx+5+gbpmw, 8, 0, 255, 155, 155, 255);
-}
-// pattern steps per beat
-if(gup_spb){
-	gup_spb = 0;
-	snprintf( spb_text, 8+4, "spb:%i", G.syn->seq[_isel].spb);
-	sg_modtext( spb_tex, spb_text);
-	sg_clear_area( giselendx+5+gbpmw, 0, 40, 8);
-	sg_drawtex( spb_tex, giselendx+5+gbpmw, 0, 0, 255, 255, 255, 255);
+switch(gui_view){
+	case 0: gui_toneview(); break;
+	case 1: gui_patternview(); break;
+	default:break;
 }
 
-// latch val
-if(mlatch>(float*)100){
-	if(gup_mlatch){
-		gup_mlatch=0;
-		snprintf( mlatch_text, 8+4, "val:%3.3f", *mlatch);
-		sg_modtext( mlatch_tex, mlatch_text);
-		sg_clear_area( giselendx+5, 8, gbpmw, 8);
-		sg_drawtex( mlatch_tex, giselendx+5, 8, 0, 155, 255, 155, 255);
-	}
-}
-
-// seq
-if(gup_seq){
-	gup_seq=0;
-	float hlen = (float)(BASE_SCREEN_WIDTH)/SEQ_LEN;
-	float vlen = (float)(gseqh)/(POLYPHONY+1);
-	sg_clear_area(0, gseq_basey, BASE_SCREEN_WIDTH, (POLYPHONY+1)*vlen);
-	for(int k=0; k<G.syn->seq[_isel].len; k++){
-		for(int j=0; j<POLYPHONY+1; j++){
-			fillRect.x=k*hlen;
-			fillRect.y=j*vlen + gseq_basey;
-			fillRect.w=hlen+1;
-			fillRect.h=vlen+1;
-
-			sg_rcol(&fillRect, k % G.syn->seq[_isel].spb ? 0 : .5 ,0, 1, 1);
-			sg_drawperim( fillRect );
-			if(j==POLYPHONY){ // modulation matrix on bottom step
-				fillRect.x+=1;
-				fillRect.y+=1;
-				fillRect.w-=1;
-				fillRect.h-=2;
-				if(G.syn->seq[_isel].modm[k]){
-					sg_rcol(&fillRect, 1,0,0, 1);
-					sg_drawrect( fillRect );
-				}
-			}
-			else if(G.syn->seq[_isel].freq[j][k] >0){
-				fillRect.x+=1;
-				fillRect.y+=1;
-				fillRect.w= MAX((hlen)*G.syn->seq[_isel].dur[k]/255.f, 2);
-				// fillRect.w-=1;
-				fillRect.h-=2;
-				sg_rcol(&fillRect, 1,1,0, 1);
-				sg_drawrect( fillRect );
-			}
-		}
-	}
-}
-//seq mouse selection
-if((!mlatch || (mlatch==phony_latch_seq)) && Mouse.b0){
-	float vlen = (float)(gseqh)/(POLYPHONY+1);
-	sg_rect r = {0, gseq_basey, BASE_SCREEN_WIDTH, (POLYPHONY+1)*vlen+8, 0,0,0,0,0,0};
-	if(ptbox( Mouse.px, Mouse.py, r)){
-		if(Mouse.px < G.syn->seq[_isel].len * ((float)(BASE_SCREEN_WIDTH)/SEQ_LEN)){
-			astep(Mouse.px/((float)(BASE_SCREEN_WIDTH)/SEQ_LEN));
-			mlatch = phony_latch_seq;
-		}
-	}
-}
-
-
-//active step
-int step=G.syn->seq[_isel].step;
-sg_clear_area(0, gseq_basey+gseqh, BASE_SCREEN_WIDTH, 8);
-sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step+1, gseq_basey+gseqh, 0, 255,255,255,255);
-sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step_sel+1, gseq_basey+gseqh+4, 0, 255,0,0,255);
-
-
-// osc
-int tw=0,th=0;
-sg_texsize(wave_tex[0], &tw, &th);
-th=MAX(th, knob_size+1);
-if(Mouse.b0 && !mlatch){
-	for(int i = 0; i<OSC_PER_TONE; i++){
-		sg_rect r = {0, gosc_basey+i*th, tw, th, 0,0,0,0, 0,0};
-		if( ptbox(Mouse.px, Mouse.py, r) ){
-			Mouse.b0=0;
-			if(Mouse.px < tw/2) {G.syn->tone[_isel].osc[i] = MAX(G.syn->tone[_isel].osc[i]-1, 0); gup_osc=1;}
-			if(Mouse.px > tw/2) {G.syn->tone[_isel].osc[i] = MIN(G.syn->tone[_isel].osc[i]+1, OSC_MAX-1); gup_osc=1;}
-		}
-	}
-}
-if(gup_osc){
-	gup_osc=0;
-	sg_clear_area(0, gosc_basey, tw, th+gosch*OSC_PER_TONE + th);
-	for(int i =0; i<OSC_PER_TONE; i++){
-		sg_drawtext(wave_tex[G.syn->tone[_isel].osc[i]], 0, gosc_basey+i*th, 0,   255,0,0,255);
-	}
-}
-int phase_basex = tw;
-{ // phase
-	for(int i=0; i<OSC_PER_TONE; i++){
-		sg_rect r={phase_basex , i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-			mlatch = &G.syn->tone[_isel].phase[i];
-			mlatch_min=0;
-			mlatch_max=1.0;
-			mlatch_factor=0.01;
-			mlatch_v=1;
+if(kbget(SDLK_TAB)){
+	kbset(SDLK_TAB, 0);
+	gui_view = !gui_view;
+	switch(gui_view){
+		case 0:
+			sg_target(G.tone_view_tex);
 			gup_mlatch=1;
-		}
-		sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].phase[i]*300, 255,255,155,255);
-	}
-}
-// modm
-int modm_basex = phase_basex+knob_size;
-for(int i=0; i<OSC_PER_TONE; i++){
-	for(int j=0; j<OSC_PER_TONE; j++){
-		if(j>i)break;
-		sg_rect r={j*(knob_size+1)+modm_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-			mlatch = syn_modm_addr( &(G.syn->tone[_isel].mod_mat), i, j);
-			mlatch_min= j==i ? 1 : 0;
-			mlatch_max= j==i ? 30 : 90;
-			mlatch_factor = 1.0;
-			mlatch_v=1;
-			gup_mlatch=1;
-		}
-		if(j==i){
-			sg_drawtex(knob_tex, r.x, r.y, (tone_frat(G.syn->tone+_isel, j, -1)-1)*3*3.9f, 255,155,155,255);
-		} else {
-			sg_drawtex(knob_tex, r.x, r.y, tone_index(G.syn->tone+_isel, i, j, -1)*3.9f, 255,255,255,255);
-		}
-	}
-}
-// omix
-for(int i=0; i<OSC_PER_TONE; i++){
-	sg_rect r={modm_basex+(knob_size+1)*OSC_PER_TONE, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-		mlatch = syn_modm_addr( &(G.syn->tone[_isel].mod_mat), i, -1);
-		mlatch_min=0;
-		mlatch_max=1.0;
-		mlatch_factor=0.01;
-		mlatch_v=1;
-		gup_mlatch=1;
-	}
-	sg_drawtex(knob_tex, r.x, r.y, tone_omix(G.syn->tone+_isel, i, -1)*300, 155,155,255,255);
-}
-// envelopes
-int ampenv_basex = modm_basex + (knob_size+1)*OSC_PER_TONE+knob_size+1 +knob_size/4;
-for(int i=0; i<OSC_PER_TONE; i++){
-	for(int j=0; j<4; j++){
-		sg_rect r={j*(knob_size+1)+ampenv_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-			switch(j){
-				case 0: mlatch = &(G.syn->tone[_isel].osc_env[i].a); mlatch_adsr=j; mlatch_adsr_osc=i; break;
-				case 1: mlatch = &(G.syn->tone[_isel].osc_env[i].d); mlatch_adsr=j; mlatch_adsr_osc=i; break;
-				case 2: mlatch = &(G.syn->tone[_isel].osc_env[i].s); mlatch_adsr=j; mlatch_adsr_osc=i; break;
-				case 3: mlatch = &(G.syn->tone[_isel].osc_env[i].r); mlatch_adsr=j; mlatch_adsr_osc=i; break;
-			}
-			mlatch_min= j==2? 0.0: 0.001;
-			mlatch_max= j==2? 1.0 : j==3? 10.0 : 3.0;
-			mlatch_factor= j==3? .1 : j==2? 0.01 : 0.05;
-			mlatch_v=1;
-		}
-		switch(j){
-			case 0: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].osc_env[i].a * 310/3 , 255,155,155,255); break;
-			case 1: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].osc_env[i].d * 310/3 , 255,255,255,255); break;
-			case 2: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].osc_env[i].s * 310   , 155,155,255,255); break;
-			case 3: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].osc_env[i].r * 310/10, 155,255,155,255); break;
-		}
-	}
-}
-// modm target
-int modm_target_basex = ampenv_basex + 4*(knob_size+1) + knob_size/4;
-for(int i=0; i<OSC_PER_TONE; i++){
-	for(int j=0; j<OSC_PER_TONE; j++){
-		if(j>i)break;
-		sg_rect r={j*(knob_size+1)+modm_target_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-			if(G.syn->seq[_isel].modm[step_sel]==NULL){
-				seq_modm(G.syn->seq+_isel, &(G.syn->tone[_isel].mod_mat), step_sel);
-				gup_seq=1;
-			}
-			mlatch = syn_modm_addr( G.syn->seq[_isel].modm[step_sel], i, j );
-			mlatch_min= j==i ? 1 : 0;
-			mlatch_max= j==i ? 30 : 90;
-			mlatch_factor = 1.0;
-			mlatch_v=1;
-			gup_mlatch=1;
-		}
-		if(j==i){
-			if(G.syn->seq[_isel].modm[step_sel]==NULL)
-				sg_drawtex(knob_tex, r.x, r.y, (tone_frat(G.syn->tone+_isel, i, -1)-1)*3*3.9f, 55,55,55,255);
-			else
-				sg_drawtex(knob_tex, r.x, r.y, ((*syn_modm_addr(G.syn->seq[_isel].modm[step_sel], i, i))-1)*3*3.9, 255,155,155,255);
-		} else {
-			if(G.syn->seq[_isel].modm[step_sel]==NULL)
-				sg_drawtex(knob_tex, r.x, r.y, tone_index(G.syn->tone+_isel, i, j, -1)*3.9f, 55,55,55,255);
-			else
-				sg_drawtex(knob_tex, r.x, r.y, ((*syn_modm_addr(G.syn->seq[_isel].modm[step_sel], i, j))-1)*3.9, 255,255,255,255);
-		}
-	}
-}
-// omix target
-for(int i=0; i<OSC_PER_TONE; i++){
-	sg_rect r={modm_target_basex+(knob_size+1)*OSC_PER_TONE, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-		if(G.syn->seq[_isel].modm[step_sel]==NULL){
-			seq_modm(G.syn->seq+_isel, &(G.syn->tone[_isel].mod_mat), step_sel);
+			gup_rec=1;
 			gup_seq=1;
-		}
-		mlatch = syn_modm_addr( G.syn->seq[_isel].modm[step_sel], i, -1 );
-
-		mlatch_min=0;
-		mlatch_max=1.0;
-		mlatch_factor=0.01;
-		mlatch_v=1;
-		gup_mlatch=1;
-	}
-	if(G.syn->seq[_isel].modm[step_sel]==NULL)
-		sg_drawtex(knob_tex, r.x, r.y, tone_omix(G.syn->tone+_isel, i, -1)*300, 55,55,55,255);
-	else
-		sg_drawtex(knob_tex, r.x, r.y, *syn_modm_addr(G.syn->seq[_isel].modm[step_sel], i, -1)*300, 155,155,255,255);
-}
-// tone gain
-int gain_basex = modm_target_basex + (knob_size+1)*(OSC_PER_TONE)+knob_size+1 +knob_size/2;
-{
-	sg_rect r={gain_basex, gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-		mlatch = &G.syn->tone[_isel].gain;
-		mlatch_min=0;
-		mlatch_max=1;
-		mlatch_factor=0.01;
-		mlatch_v=1;
-		gup_mlatch=1;
-	}
-	sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].gain*300, 255,5,5,255);
-}
-int penv_adsr_basex = gain_basex;
-for(int j=0; j<4; j++){
-	// if(j>i)break;
-	sg_rect r={penv_adsr_basex, (j+1)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-		switch(j){
-			case 0: mlatch = &(G.syn->tone[_isel].pitch_env.a); mlatch_adsr=j; break;
-			case 1: mlatch = &(G.syn->tone[_isel].pitch_env.d); mlatch_adsr=j; break;
-			case 2: mlatch = &(G.syn->tone[_isel].pitch_env.s); mlatch_adsr=j; break;
-			case 3: mlatch = &(G.syn->tone[_isel].pitch_env.r); mlatch_adsr=j; break;
-		}
-		mlatch_min=0.001;
-		mlatch_max= j==2? 1.0 : j==3? 10.0 : 3.0;
-		mlatch_factor= j==3? .1 : j==2? 0.01 : 0.05;
-		mlatch_v=1;
-		mlatch_adsr_pitch=1;
-	}
-	switch(j){
-		case 0: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env.a * 310/3 , 255,155,155,255); break;
-		case 1: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env.d * 310/3 , 255,255,255,255); break;
-		case 2: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env.s * 310   , 155,155,255,255); break;
-		case 3: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env.r * 310/10, 155,255,155,255); break;
-	}
-}
-// pitch env amt
-{
-	sg_rect r={penv_adsr_basex, (5)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
-	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-		mlatch=&G.syn->tone[_isel].pitch_env_amt;
-		mlatch_min=0.0;
-		mlatch_max= 15;
-		mlatch_factor= 0.05;
-		mlatch_v=1;
-		mlatch_adsr_pitch=1;
-	}
-	sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env_amt * 310/15, 255,255,155,255);
-}
-
-// quit dialog
-if(request_quit){
-	int border = 10;
-	int sx=0,sy=0, syesx=0, snox=0;
-	sg_texsize( quitd_tex, &sx, &sy );
-	sg_rect r = {BASE_SCREEN_WIDTH/2 - sx/2 - border, BASE_SCREEN_HEIGHT/2 - sy/2 - border, sx + border*2, sy*2 + border*2, 255,0,0,255, 0,0};
-	sg_clear_area(r.x, r.y, r.w, r.h);
-	sg_drawtex( quitd_tex, r.x+border, r.y+border, 0, 255,150+100*tri((frame%60)/60.0),150+100*tri((frame%60)/60.0),255);
-	sg_drawtex( quitd_tex_no,  r.x+border, r.y+sy+border, 0, 255,255,255,255);
-
-	sg_texsize( quitd_tex_no, &snox, NULL);
-	sg_rect rno = {r.x+border-2, r.y+sy+border-2, snox+2, sy+2, 155,155,255,255, 0,0};
-	char click_no = ptbox(Mouse.px, Mouse.py, rno);
-	if(click_no) sg_drawperim(rno);
-	click_no = click_no && Mouse.b0;
-
-	sg_texsize( quitd_tex_yes, &syesx, NULL );
-	sg_drawtex( quitd_tex_yes, r.x+r.w-syesx-border, r.y+sy+border, 0, 155,0,0,255);
-	sg_rect ryes = {r.x+r.w-syesx-border-2, r.y+sy+border-2, syesx+2, sy+2, 255,0,0,255, 0,0};
-	char click_yes = ptbox(Mouse.px, Mouse.py, ryes);
-	if(click_yes) sg_drawperim(ryes);
-	click_yes = click_yes && Mouse.b0;
-
-	sg_drawperim( r );
-	if(kbget(SDLK_ESCAPE) || click_no || (Mouse.b0 && !click_yes && !ptbox(Mouse.px, Mouse.py, r)) ) { request_quit=0; sg_clear_area(r.x, r.y, r.w, r.h); }
-	if(kbget(SDLK_RETURN) || click_yes) running=0;
-}
-
-// virtual keyboard
-int vkb_h = 32;
-int vkb_basey = BASE_SCREEN_HEIGHT-vkb_h;
-int vkb_keys = 12*2+1;
-int vkb_endx = 0;
-if(gup_vkb || Mouse.py<= vkb_basey){
-	sg_rect r = {0, vkb_basey, BASE_SCREEN_WIDTH, vkb_h, 255, 255,255,255, 0,0};
-	if(gup_vkb) sg_clear_area(r.x, r.y, r.w, r.h);
-	r.w=((float)BASE_SCREEN_WIDTH)/vkb_keys;
-	// r.x+=2;
-	for(int o = 0 ; o < 3; o++ ){
-		int notei=0;
-		for(int i = 0 ; i <= 13; i++){
-			if(o>=2 && i>=1) break;
-
-			char black = i%2;
-			// r.h = black? vkb_h/2 : vkb_h;
-			r.r = black? 55 : 255;
-			r.g = black? 55 : 255;
-			r.b = black? 55 : 255;
-
-			if(i!=0 && (i==5 || i==13)) continue;
-			char collision = (!mlatch || mlatch==phony_latch_vkb) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r);
-			if(collision || voices[((-9+notei+o*12)-C0)%MAX_KEYS].tone != -1 ) r.b=0;
-
-			if(collision && (!vkb_note_active || vkb_note!=-9+notei+o*12)) {
-				mlatch = phony_latch_vkb;
-				if(vkb_note!=-9+notei+o*12){
-					key_update(vkb_note, 0);
-				}
-				key_update(-9+notei+o*12, 1);
-				vkb_note = -9+notei+o*12;
-				vkb_note_active =1;
-			}
-			notei++;
-
-			if(gup_vkb) sg_drawrect(r);
-			r.r = 0;
-			r.g = 0;
-			r.b = 0;
-			if(gup_vkb) sg_drawperim(r);
-			r.x += ((float)BASE_SCREEN_WIDTH)/(vkb_keys)-1;
-		}
-	}
-	vkb_endx = r.x;
-}
-
-
-// play/rec button
-{
-	int sx=0,sy=0;
-	sg_texsize(gplay_tex, &sx,&sy);
-	sg_rect r = {2, vkb_basey-sy, sx, sy, 0,0,0,0, 0,0};
-	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
-		Mouse.b0 = 0;
-		syn_pause(G.syn);
-	}
-	char p = G.syn->seq_play;
-	sg_drawtex(gplay_tex, r.x, r.y, 0, p?255:55, 55, 55, 255);
-
-//rec
-	int rsx=0,rsy=0;
-	sg_texsize(rec_tex, &rsx,&rsy);
-	if(gup_rec){
-		gup_rec=0;
-		// sg_clear_area( 2+sx, vkb_basey-rsx, 40, 8);
-		sg_drawtex( rec_tex, 2+sx, vkb_basey-rsy, 0, 255*rec, 55, 55, 255);
-	}
-
-	sg_rect rrec={2+sx, vkb_basey-rsy, rsx, rsy, 0,0,0,0, 0,0};
-	sg_drawperim(rrec);
-	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, rrec)){
-		Mouse.b0=0;
-		gup_rec=1;
-		rec=!rec;
-	}
-}
-
-
-
-
-
-/*----------------------------------------------------------------------------*/
-/* end GUI */
-/*----------------------------------------------------------------------------*/
-
-if (kbget(SDLK_LEFT )){
-	key_delay++;
-	if(key_delay==0){ key_delay=-6;
-		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-			G.syn->seq[_isel].len=MAX(G.syn->seq[_isel].len-1, 1)      ;gup_seq=1;}
-		else astep( step_sel-1);
-	}
-}
-if (kbget(SDLK_RIGHT)){
-	key_delay++;
-	if(key_delay==0){ key_delay=-6;
-		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-			G.syn->seq[_isel].len=MIN(G.syn->seq[_isel].len+1, SEQ_LEN);gup_seq=1;}
-		else astep( step_sel+1);
-	}
-}
-if (kbget(SDLK_UP)){ //kbset(SDLK_UP, 0);
-	key_delay++;
-	if(key_delay==0){ key_delay=-6;
-		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-			G.syn->seq[_isel].spb=MIN(G.syn->seq[_isel].spb+1, SEQ_LEN);
+			gup_osc=1;
 			gup_spb=1;
-			gup_seq=1;
-		} else {step_add++;gup_step_add=1;}
-	}
-}
-if (kbget(SDLK_DOWN )){ //kbset(SDLK_DOWN, 0);
-	key_delay++;
-	if(key_delay==0){ key_delay=-6;
-		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
-			G.syn->seq[_isel].spb=MAX(G.syn->seq[_isel].spb-1, 1);
-			gup_spb=1;
-			gup_seq=1;
-		} else if(step_add>0) {step_add--; gup_step_add=1;}
-	}
-}
+			gup_step_add=1;
+			gup_bpm=1;
+			gup_vkb=1;
+			gup_mix=1;
 
-
-if(kbget(SDLK_DELETE)){
-	if(!(kbget(SDLK_RALT) || kbget(SDLK_LALT) || kbget(SDLK_ALTERASE)))
-		seq_anof(G.syn->seq+_isel, step_sel);
-	seq_modm(G.syn->seq+_isel, NULL, step_sel); gup_seq=1;
-}
-
-if(kbget(SDLK_EQUALS)){
-	if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)){
-		kbset(SDLK_EQUALS, 0);
-		octave++;
+			break;
+		case 1:
+			sg_target(G.pattern_view_tex);
+			gup_step_bar=1;
+			break;
+		default:break;
 	}
+	sg_clear();
 }
-if(kbget(SDLK_MINUS)){
-	if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)){
-		kbset(SDLK_MINUS, 0);
-		octave--;
-	}
-}
-// case '-': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) octave--; break;
-// case '=': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) octave++; break;
-if(kbget(tap_tempo_key)){
-	kbset(tap_tempo_key, 0);
-	if(tap_tempo == -1){
-		tap_tempo=G.time;
-	} else {
-		float target_bpm = 1.f / ((G.time-tap_tempo) / 60.0);
-		syn_bpm(G.syn, target_bpm);
-		tap_tempo=-1;
-		gup_bpm=1;
-	}
-}
-if(1.f / ((G.time-tap_tempo) / 60.0)<tap_tempo_min_bpm) tap_tempo=-1;
 
 		frame++;
 		pbeat = beat;
+		pstep = step;
 		sg_show();
 
 
@@ -1322,6 +872,7 @@ if(1.f / ((G.time-tap_tempo) / 60.0)<tap_tempo_min_bpm) tap_tempo=-1;
 
 void input_update(void){
 	Mouse.dx=0;Mouse.dy=0;
+	Mouse.sdx=0;Mouse.sdy=0;
 	Mouse.wx=0;Mouse.wy=0;
 	// SDL_PumpEvents();
 	SDL_Event e;
@@ -1335,10 +886,11 @@ void kbset(SDL_Keycode k, int32_t v){
 }
 
 
+
 int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 	SDL_Event e = *event;
 // must lock syn when activating notes from main thread
-syn_lock(G.syn, 1); // todo make a finer lock
+// syn_lock(G.syn, 1); // todo make a finer lock
 	switch(e.type){
 		// case SDL_QUIT: running=0; break;
 		case SDL_QUIT:
@@ -1356,6 +908,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case SDL_WINDOWEVENT_RESIZED:
 					screen_width = e.window.data1;
 					screen_height= e.window.data2;
+
 					break;
 				case SDL_WINDOWEVENT_CLOSE:
 					if(!request_quit){
@@ -1409,7 +962,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case SDLK_F11: if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+10, !seq_mute(G.syn->seq+10, -1));} else isel(10); break;
 				case SDLK_F12: if(kbget(SDLK_SPACE)){ seq_mute(G.syn->seq+11, !seq_mute(G.syn->seq+11, -1));} else isel(11); break;
 
-				case SDLK_RETURN: syn_pause(G.syn); break;
+				case SDLK_RETURN: if(G.syn->seq_play) syn_stop(G.syn); else syn_pause(G.syn); break;
 				case SDLK_PAUSE: syn_pause(G.syn); break;
 				case SDLK_CAPSLOCK: rec=!rec; gup_rec=1; break;
 
@@ -1586,16 +1139,28 @@ syn_lock(G.syn, 1); // todo make a finer lock
 		case SDL_MOUSEMOTION:
 			Mouse.px = ((float)e.motion.x)/screen_width * BASE_SCREEN_WIDTH;
 			Mouse.py = ((float)e.motion.y)/screen_height * BASE_SCREEN_HEIGHT;
-			Mouse.dx = e.motion.xrel;
-			Mouse.dy = e.motion.yrel;
+			Mouse.dx = ((float)e.motion.xrel)/screen_width * BASE_SCREEN_WIDTH;
+			Mouse.dy = ((float)e.motion.yrel)/screen_height * BASE_SCREEN_HEIGHT;
+			Mouse.sdx = e.motion.xrel;
+			Mouse.sdy = e.motion.yrel;
 			if(mlatch>(float*)100){
 				gup_mlatch=1;
 				char shift = kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT);
-				if(mlatch_v) *mlatch = CLAMP(*mlatch - Mouse.dy * (shift?mlatch_factor/10.0:mlatch_factor), mlatch_min, mlatch_max);
-				else         *mlatch = CLAMP(*mlatch - Mouse.dx * (shift?mlatch_factor/10.0:mlatch_factor), mlatch_min, mlatch_max);
+				char ctrl  = kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL);
+				float lmdx=Mouse.dx;
+				float lmdy=Mouse.dy;
+				if(ctrl){
+					lmdx = lmdx/BASE_SCREEN_WIDTH * screen_width;
+					lmdy = lmdy/BASE_SCREEN_HEIGHT * screen_height;
+				}
+				if(mlatch_v) *mlatch = CLAMP(*mlatch - lmdy * (shift?mlatch_factor/10.0:mlatch_factor), mlatch_min, mlatch_max);
+				else         *mlatch = CLAMP(*mlatch + lmdx * (shift?mlatch_factor/10.0:mlatch_factor), mlatch_min, mlatch_max);
+
+				if(Mouse.b1) *mlatch = round(*mlatch);
 
 				if(mlatch_adsr >= 0){
 					if(!mlatch_adsr_pitch){
+						syn_lock(G.syn, 1);
 						switch(mlatch_adsr){
 							case 0: adsr_a(G.syn->tone[_isel].osc_env + mlatch_adsr_osc, *mlatch); break;
 							case 1: adsr_d(G.syn->tone[_isel].osc_env + mlatch_adsr_osc, *mlatch); break;
@@ -1603,7 +1168,9 @@ syn_lock(G.syn, 1); // todo make a finer lock
 							case 3: adsr_r(G.syn->tone[_isel].osc_env + mlatch_adsr_osc, *mlatch); break;
 							default: break;
 						}
+						syn_lock(G.syn, 0);
 					} else {
+						syn_lock(G.syn, 1);
 						switch(mlatch_adsr){
 							case 0: adsr_a(&G.syn->tone[_isel].pitch_env, *mlatch); break;
 							case 1: adsr_d(&G.syn->tone[_isel].pitch_env, *mlatch); break;
@@ -1611,6 +1178,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 							case 3: adsr_r(&G.syn->tone[_isel].pitch_env, *mlatch); break;
 							default: break;
 						}
+						syn_lock(G.syn, 0);
 					}
 				}
 			} break;
@@ -1621,7 +1189,10 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				case SDL_BUTTON_RIGHT:  Mouse.b1 = 1; break;
 				case SDL_BUTTON_MIDDLE: Mouse.b2 = 1; break;
 				default: break;
-			} break;
+			}
+			if(mlatch>(float*)100 && Mouse.b1) {*mlatch = round(*mlatch); gup_mlatch=1;}
+
+			break;
 
 		case SDL_MOUSEBUTTONUP:
 			switch(e.button.button){
@@ -1634,9 +1205,11 @@ syn_lock(G.syn, 1); // todo make a finer lock
 				vkb_note_active=0;
 				key_update(vkb_note, 0);
 			}
-			mlatch=NULL;
-			mlatch_adsr=-1;
-			mlatch_adsr_pitch=0;
+			if(!Mouse.b0){
+				mlatch=NULL;
+				mlatch_adsr=-1;
+				mlatch_adsr_pitch=0;
+			}
 			break;
 
 
@@ -1649,7 +1222,7 @@ syn_lock(G.syn, 1); // todo make a finer lock
 
 		default: break;
 	}
-syn_lock(G.syn, 0);
+// syn_lock(G.syn, 0);
 
 	return 1;
 }
@@ -1778,8 +1351,13 @@ void sg_quit(void){
 
 void sg_clear(void){
 	if(!sg_was_init) sg_init();
-	draw_color(0,0,0,255);
-	draw_clear();
+	// draw_color(0,0,0,255);
+	// draw_clear();
+	sg_rect r;
+	r.x=0; r.y=0; r.w=BASE_SCREEN_WIDTH; r.h=BASE_SCREEN_HEIGHT;
+	r.r=0; r.g=0; r.b=0; r.a=255;
+	sg_drawrect(r);
+
 }
 
 void sg_clear_area(int x, int y, int w, int h){
@@ -1809,6 +1387,7 @@ void sg_show(void){
 	}
 	if(update) draw_show();
 	sg_rect_count = 0;
+
 }
 
 
@@ -1880,28 +1459,25 @@ int16_t sg_modtext( int16_t tex, char* newtext){ assert(tex < sg_tex_count);
 	return tex;
 }
 
+// void sg_modtex( int16_t tex, rgba8* pixels, int x, int y, int w, int h){ assert(tex < sg_tex_count);
+// 	if(!sg_was_init) sg_init();
+// 	int err=0;
+// 	SDL_Rect r={x,y,w,h};
+// 	err=SDL_UpdateTexture(sg_texs[tex]->sdltid, &r, pixels, w);
+// 	if(err) printf("%s\n", SDL_GetError());
+// }
+
 void sg_drawtex( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, uint8_t b, uint8_t a){
 	if(x > BASE_SCREEN_WIDTH || y > BASE_SCREEN_HEIGHT || x+sg_texs[tex].w < 0 || y+sg_texs[tex].h < 0)
 		return;
 	sg_rect t;
-	t.x=x;
-	t.y=y;
-	t.r=r;
-	t.g=g;
-	t.b=b;
-	t.a=a;
+	t.x=x; t.y=y;
+	t.r=r; t.g=g; t.b=b; t.a=a;
 	t.w=sg_texs[tex].w;
 	t.h=sg_texs[tex].h;
 	t.tid=tex;
 	t.ang = ang;
 	sg_drawr(t);
-	// if(!sg_was_init) sg_init();
-	// if(sg_rect_count >= sg_rect_capacity){
-	// 	sg_rect_capacity*=2;
-	// 	sg_rects = realloc(sg_rects, sizeof(sg_rect)*sg_rect_capacity);
-	// }
-	// sg_rects[sg_rect_count] = t;
-	// sg_rect_count++;
 }
 
 void sg_drawtext( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, uint8_t b, uint8_t a){
@@ -1911,7 +1487,10 @@ void sg_drawtext( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, 
 #endif
 }
 
-
+void sg_target(SDL_Texture* t){
+	G.current_target_tex = t;
+	SDL_SetRenderTarget(G.renderer, t);
+}
 
 
 
@@ -1938,11 +1517,11 @@ void sg_drawtext( uint16_t tex , int x, int y, float ang, uint8_t r, uint8_t g, 
 void draw_show( void ){
 	#ifndef _3DS
 		SDL_SetRenderTarget(G.renderer, NULL);
-		sg_clear();
+		// sg_clear();
 
-		SDL_RenderCopy(G.renderer, G.screen_tex, NULL, NULL);
+		SDL_RenderCopy(G.renderer, G.current_target_tex, NULL, NULL);
 		SDL_RenderPresent(G.renderer);
-		SDL_SetRenderTarget(G.renderer, G.screen_tex);
+		SDL_SetRenderTarget(G.renderer, G.current_target_tex);
 
 		// SDL_RenderPresent( G.renderer );
 	#else
@@ -2005,7 +1584,7 @@ void draw_tex( uint16_t tid, int x, int y, float ang, uint8_t r, uint8_t g, uint
 		SDL_Rect dst = {x, y, sg_texs[tid].w, sg_texs[tid].h};
 		SDL_SetTextureColorMod( sg_texs[tid].sdltid, r,g,b );
 		SDL_SetTextureAlphaMod( sg_texs[tid].sdltid, a );
-		// SDL_Point center = {((float)sg_texs[tid].w)/2.0, ((float)sg_texs[tid].h)/2.0};
+		// SDL_Point center = {floor((float)sg_texs[tid].w)/2.0, floor((float)sg_texs[tid].h)/2.0};
 		// SDL_RenderCopyEx(G.renderer, sg_texs[tid].sdltid, NULL, &dst, ang, &center, 0);
 		SDL_RenderCopyEx(G.renderer, sg_texs[tid].sdltid, NULL, &dst, ang, NULL, 0);
 	#else
@@ -2117,6 +1696,7 @@ int isel(int i){
 			voices[i] = (noteid){-1,-1};
 		}
 	}
+	gup_shown_notes=1;
 	return ret;
 }
 
@@ -2152,20 +1732,25 @@ int commit_step_end=0;
 
 
 void key_update(int key, char on){
+	syn_lock(G.syn, 1);
 	// if(!voices_inited)init_voices();
 
-	int keyi = (key-C0)%MAX_KEYS;
-	if(keyi<0) keyi+=MAX_KEYS-1;
+	// int keyi = (key-C0)%MAX_KEYS;
+	// if(keyi<0) keyi+=MAX_KEYS-1;
+
+	int keyi = MAPVAL((float)key+12*(octave-4), C0, C0+12*MAX_OCTAVE, 0, 12*MAX_OCTAVE);
+	// if(keyi<0) keyi+=MAX_KEYS-1;
 
 	float target_note=0;
 
 	if(on && voices[keyi].voice != -1){
-return;
+		syn_lock(G.syn, 0);
+		return;
 	}
 
 	if(on){
-		target_note = key+12*octave;
-		voices[keyi] = syn_non(G.syn, _isel, key +12*octave, testvelocity);
+		target_note = key+12*(octave-4);
+		voices[keyi] = syn_non(G.syn, _isel, key +12*(octave-4), testvelocity);
 	} else {
 		if(rec) voice_count=MAX(voice_count-1, 0);
 		syn_nof(G.syn, voices[keyi] );
@@ -2188,21 +1773,885 @@ return;
 			commit_step_begin=MIN(commit_step_begin, tmp);
 			for(int s=commit_step_begin; s<=commit_step_end; s++){
 				seq_anof(G.syn->seq+_isel, s);
+				note_cols[_isel][step_sel]=0;
+
 				for(int i=0; i<commit_count; i++){
 					seq_non(G.syn->seq+_isel, s, note_commit[i], .9, s<commit_step_end? 1.0 : .5);
+					note_cols[_isel][step_sel]++;
 				}
 			}
 		} else {
 			seq_anof(G.syn->seq+_isel, step_sel);
+			note_cols[_isel][step_sel]=0;
 			for(int i=0; i<commit_count; i++){
 				seq_non(G.syn->seq+_isel, step_sel, note_commit[i], .9, .5);
+				note_cols[_isel][step_sel]++;
 			}
 		}
 
 		astep(step_sel + step_add);
 		commit_count=0;
 		gup_seq=1;
+		gup_shown_notes=1;
+		gup_step_bar=1;
 	}
+
+	syn_lock(G.syn, 0);
 
 }
 
+int kb_octave(int o){
+	int prev_oct = octave;
+	if(o>=0){
+		syn_anof(G.syn, _isel);
+		for(int i=0; i<MAX_KEYS;i++)
+			voices[i] = (noteid){-1, -1};
+
+		octave=o;
+		octave=CLAMP(octave, 0, MAX_OCTAVE);
+		note_scrollv %= 12;
+		note_scrollv += octave*12;
+		// note_scrollv += 12;
+		note_scrollv = CLAMP(note_scrollv, 0, (MAX_OCTAVE-1)*12-1);
+		gup_shown_notes=1;
+	}
+	return prev_oct;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*----------------------------------------------------------------------------*/
+/* GUI */
+/*----------------------------------------------------------------------------*/
+void gui_quit_dialog(void);
+
+void gui_toneview(void){
+// isel
+int giselendx = giselw*SYN_TONES + (giselw/8)*MAX(SYN_TONES/4-1,1);
+// sg_clear_area(0,0, giselw*(SYN_TONES+SYN_TONES/8) , giselh);
+sg_clear_area(0,0, giselendx , giselh);
+int isel_padding=0;
+for(int i=0; i<SYN_TONES; i++){
+	if((i!=0) && ((i%4)==0)) isel_padding+=giselw/8;
+	sg_rect r;
+	r.x=isel_padding;
+	r.y=0;
+	r.w=giselw;
+	r.h=giselh;
+	if((!mlatch || (mlatch==phony_latch_isel)) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r))
+		{isel(i); mlatch=phony_latch_isel;}
+	r.r=(_isel==i) * 255;
+	r.g=seq_mute(G.syn->seq+i, -1)? 55: 55-r.r;
+	r.b=seq_mute(G.syn->seq+i, -1)? 55: 255;
+	r.a=255;
+	isel_padding+=giselw;
+	sg_drawperim(r);
+	// VUmeter
+	r.x++;
+	r.w=r.w/2-2;
+	r.y=giselh - (G.syn->tone[i].vupeakl * giselh)-1;
+	r.h=giselh - r.y-1;
+	sg_rcol(&r, MIN(G.syn->tone[i].vupeakl, 1.0), MAX(1-G.syn->tone[i].vupeakl, 0),0,1);
+	sg_drawrect(r);
+	r.x=r.x+r.w+2;
+	r.y=giselh - (G.syn->tone[i].vupeakr * giselh)-1;
+	r.h=giselh - r.y-1;
+	sg_rcol(&r, MIN(G.syn->tone[i].vupeakr, 1.0), MAX(1-G.syn->tone[i].vupeakr, 0),0,1);
+	sg_drawrect(r);
+}
+int gbpmw = 76;
+// bpm mouse
+if( (!mlatch || (mlatch == phony_latch_bpm)) && Mouse.b0){
+	// sg_rect r = {giselw*(SYN_TONES+SYN_TONES/4)+4, 0, 70, 16, 0,0,0,0, 0,0};
+	sg_rect r = {giselendx+5, 0, gbpmw, 16, 0,0,0,0, 0,0};
+	if((mlatch == phony_latch_bpm) || ptbox(Mouse.px, Mouse.py, r)){
+
+		int shift = kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT);
+		float bpm = syn_bpm(G.syn, -1);
+		syn_bpm(G.syn, bpm + ((float)Mouse.dx)/( shift? 100.0 : 1.0 ));
+		gup_bpm=1;
+		mlatch = phony_latch_bpm;
+
+		if(Mouse.b1)
+			syn_bpm(G.syn, round(bpm) );
+	}
+}
+// bpm
+if(gup_bpm){
+	gup_bpm = 0;
+	snprintf( bpm_text, 8+4+2, "bpm:%3.3f", syn_bpm(G.syn, -1));
+	sg_modtext( bpm_tex, bpm_text);
+	// sg_clear_area( giselw*(SYN_TONES+SYN_TONES/4)+4, 0, 76, 8);
+	sg_clear_area( giselendx+5, 0, gbpmw, 8);
+	// sg_drawtex( bpm_tex, giselw*(SYN_TONES+SYN_TONES/8)+4, 0, 0, 255, 255, 255, 255);
+	sg_drawtex( bpm_tex, giselendx+5, 0, 0, 255, 255, 255, 255);
+}
+{ // bpm light
+	// sg_rect r = {giselw*(SYN_TONES+SYN_TONES/4)+1, 1, 2, 6, beat!=pbeat?255:50, 50+(tap_tempo>0? 200 : 0), 50, 255, 0,0};
+	sg_rect r = {giselendx+1, 1, 3, 6, beat!=pbeat?255:50, 50+(tap_tempo>0? 200 : 0), 50, 255, 0,0};
+	sg_drawrect( r );
+}
+// pattern step add
+if(gup_step_add){
+	gup_step_add = 0;
+	snprintf( step_add_text, 8+4, "add:%i", step_add);
+	sg_modtext( step_add_tex, step_add_text);
+	sg_clear_area( giselendx+5 +gbpmw, 8, 64, 8);
+	sg_drawtex( step_add_tex, giselendx+5+gbpmw, 8, 0, 255, 155, 155, 255);
+}
+// pattern steps per beat
+if(gup_spb){
+	gup_spb = 0;
+	snprintf( spb_text, 8+4, "spb:%i", G.syn->seq[_isel].spb);
+	sg_modtext( spb_tex, spb_text);
+	sg_clear_area( giselendx+5+gbpmw, 0, 40, 8);
+	sg_drawtex( spb_tex, giselendx+5+gbpmw, 0, 0, 255, 255, 255, 255);
+}
+
+// latch val
+if(gup_mlatch){
+	if(mlatch>(float*)100){
+		gup_mlatch=0;
+		snprintf( mlatch_text, 8+4, "val:%3.3f", *mlatch);
+		sg_modtext( mlatch_tex, mlatch_text);
+		sg_clear_area( giselendx+5, 8, gbpmw, 8);
+	}
+	sg_drawtex( mlatch_tex, giselendx+5, 8, 0, 155, 255, 155, 255);
+}
+
+// seq
+if(gup_seq){
+	gup_seq=0;
+	float hlen = (float)(BASE_SCREEN_WIDTH)/SEQ_LEN;
+	float vlen = (float)(gseqh)/(POLYPHONY+1);
+	sg_clear_area(0, gseq_basey, BASE_SCREEN_WIDTH, (POLYPHONY+1)*vlen);
+	for(int k=0; k<G.syn->seq[_isel].len; k++){
+		char is_beatstep = k % G.syn->seq[_isel].spb;
+		for(int j=0; j<POLYPHONY+1; j++){
+			fillRect.x=k*hlen;
+			fillRect.y=j*vlen + gseq_basey;
+			fillRect.w=hlen+1;
+			fillRect.h=vlen+1;
+			sg_rcol(&fillRect, is_beatstep ? 0 : .5 ,is_beatstep ? 0 : .5 , 1, 1);
+			sg_drawperim( fillRect );
+			if(j==POLYPHONY){ // modulation matrix on bottom step
+				fillRect.x+=1;
+				fillRect.y+=1;
+				fillRect.w-=2;
+				fillRect.h-=2;
+				if(G.syn->seq[_isel].modm[k]){
+					sg_rcol(&fillRect, 1,0,0, 1);
+					sg_drawrect( fillRect );
+				}
+			}
+			else if(G.syn->seq[_isel].note[j][k] >SEQ_MIN_NOTE){
+				fillRect.x+=1;
+				fillRect.y+=1;
+				fillRect.w= MAX((hlen)*G.syn->seq[_isel].dur[j][k]/255.f, 2);
+				fillRect.w-=1;
+				fillRect.h-=2;
+				sg_rcol(&fillRect, 1,1,0, 1);
+				sg_drawrect( fillRect );
+			}
+		}
+	}
+}
+//seq mouse selection
+if((!mlatch || (mlatch==phony_latch_seq)) && Mouse.b0){
+	float vlen = (float)(gseqh)/(POLYPHONY+1);
+	sg_rect r = {0, gseq_basey, BASE_SCREEN_WIDTH, (POLYPHONY+1)*vlen+8, 0,0,0,0,0,0};
+	if(ptbox( Mouse.px, Mouse.py, r)){
+		if(Mouse.px < G.syn->seq[_isel].len * ((float)(BASE_SCREEN_WIDTH)/SEQ_LEN)){
+			astep(Mouse.px/((float)(BASE_SCREEN_WIDTH)/SEQ_LEN));
+			mlatch = phony_latch_seq;
+		}
+	}
+}
+
+
+//active step
+int step=G.syn->seq[_isel].step;
+sg_clear_area(0, gseq_basey+gseqh, BASE_SCREEN_WIDTH, 8);
+sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step+1, gseq_basey+gseqh, 0, 255,255,255,255);
+sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step_sel+1, gseq_basey+gseqh+4, 0, 255,0,0,255);
+
+
+// osc
+int tw=0,th=0;
+sg_texsize(wave_tex[0], &tw, &th);
+th=MAX(th, knob_size+1);
+if(Mouse.b0 && !mlatch){
+	for(int i = 0; i<OSC_PER_TONE; i++){
+		sg_rect r = {0, gosc_basey+i*th, tw, th, 0,0,0,0, 0,0};
+		if( ptbox(Mouse.px, Mouse.py, r) ){
+			Mouse.b0=0;
+			if(Mouse.px < tw/2) {G.syn->tone[_isel].osc[i] = MAX(G.syn->tone[_isel].osc[i]-1, 0); gup_osc=1;}
+			if(Mouse.px > tw/2) {G.syn->tone[_isel].osc[i] = MIN(G.syn->tone[_isel].osc[i]+1, OSC_MAX-1); gup_osc=1;}
+		}
+	}
+}
+if(gup_osc){
+	gup_osc=0;
+	sg_clear_area(0, gosc_basey, tw, th+gosch*OSC_PER_TONE + th);
+	for(int i =0; i<OSC_PER_TONE; i++){
+		sg_drawtext(wave_tex[G.syn->tone[_isel].osc[i]], 0, gosc_basey+i*th, 0,   255,0,0,255);
+	}
+}
+int phase_basex = tw;
+{ // phase
+	for(int i=0; i<OSC_PER_TONE; i++){
+		sg_rect r={phase_basex , i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = &G.syn->tone[_isel].phase[i];
+			mlatch_min=0;
+			mlatch_max=1.0;
+			mlatch_factor=0.01;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].phase[i]*300, 255,255,155,255);
+	}
+}
+// modm
+int modm_basex = phase_basex+knob_size;
+for(int i=0; i<OSC_PER_TONE; i++){
+	for(int j=0; j<OSC_PER_TONE; j++){
+		if(j>i)break;
+		sg_rect r={j*(knob_size+1)+modm_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = syn_modm_addr( &(G.syn->tone[_isel].mod_mat), i, j);
+			mlatch_min= j==i ? 1 : 0;
+			mlatch_max= j==i ? 30 : 90;
+			mlatch_factor = 1.0;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		if(j==i){
+			sg_drawtex(knob_tex, r.x, r.y, (tone_frat(G.syn->tone+_isel, j, -1)-1)*3*3.9f, 255,155,155,255);
+		} else {
+			sg_drawtex(knob_tex, r.x, r.y, tone_index(G.syn->tone+_isel, i, j, -1)*3.9f, 255,255,255,255);
+		}
+	}
+}
+// omix
+for(int i=0; i<OSC_PER_TONE; i++){
+	sg_rect r={modm_basex+(knob_size+1)*OSC_PER_TONE, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+		mlatch = syn_modm_addr( &(G.syn->tone[_isel].mod_mat), i, -1);
+		mlatch_min=0;
+		mlatch_max=1.0;
+		mlatch_factor=0.01;
+		mlatch_v=1;
+		gup_mlatch=1;
+	}
+	sg_drawtex(knob_tex, r.x, r.y, tone_omix(G.syn->tone+_isel, i, -1)*300, 155,155,255,255);
+}
+// envelopes
+int ampenv_basex = modm_basex + (knob_size+1)*OSC_PER_TONE+knob_size+1 +knob_size/4;
+for(int i=0; i<OSC_PER_TONE; i++){
+	for(int j=0; j<4; j++){
+		sg_rect r={j*(knob_size+1)+ampenv_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			switch(j){
+				case 0: mlatch = &(G.syn->tone[_isel].osc_env[i].a); mlatch_adsr=j; mlatch_adsr_osc=i; break;
+				case 1: mlatch = &(G.syn->tone[_isel].osc_env[i].d); mlatch_adsr=j; mlatch_adsr_osc=i; break;
+				case 2: mlatch = &(G.syn->tone[_isel].osc_env[i].s); mlatch_adsr=j; mlatch_adsr_osc=i; break;
+				case 3: mlatch = &(G.syn->tone[_isel].osc_env[i].r); mlatch_adsr=j; mlatch_adsr_osc=i; break;
+			}
+			mlatch_min= j==2? 0.0: 0.0002;
+			mlatch_max= j==2? 1.0 : 10.0;
+			mlatch_factor= j==2? 0.01 : 0.1;
+			mlatch_v=1;
+		}
+		switch(j){
+			case 0: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].osc_env[i].a * 310/10 , 255,155,155,255); break;
+			case 1: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].osc_env[i].d * 310/10 , 255,255,255,255); break;
+			case 2: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].osc_env[i].s * 310   , 155,155,255,255); break;
+			case 3: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].osc_env[i].r * 310/10, 155,255,155,255); break;
+		}
+	}
+}
+// modm target
+int modm_target_basex = ampenv_basex + 4*(knob_size+1) + knob_size/4;
+for(int i=0; i<OSC_PER_TONE; i++){
+	for(int j=0; j<OSC_PER_TONE; j++){
+		if(j>i)break;
+		sg_rect r={j*(knob_size+1)+modm_target_basex, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			if(G.syn->seq[_isel].modm[step_sel]==NULL){
+				seq_modm(G.syn->seq+_isel, &(G.syn->tone[_isel].mod_mat), step_sel);
+				gup_seq=1;
+			}
+			mlatch = syn_modm_addr( G.syn->seq[_isel].modm[step_sel], i, j );
+			mlatch_min= j==i ? 1 : 0;
+			mlatch_max= j==i ? 30 : 90;
+			mlatch_factor = 1.0;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		if(j==i){
+			if(G.syn->seq[_isel].modm[step_sel]==NULL)
+				sg_drawtex(knob_tex, r.x, r.y, (tone_frat(G.syn->tone+_isel, i, -1)-1)*3*3.9f, 55,55,55,255);
+			else
+				sg_drawtex(knob_tex, r.x, r.y, ((*syn_modm_addr(G.syn->seq[_isel].modm[step_sel], i, i))-1)*3*3.9, 255,155,155,255);
+		} else {
+			if(G.syn->seq[_isel].modm[step_sel]==NULL)
+				sg_drawtex(knob_tex, r.x, r.y, tone_index(G.syn->tone+_isel, i, j, -1)*3.9f, 55,55,55,255);
+			else
+				sg_drawtex(knob_tex, r.x, r.y, ((*syn_modm_addr(G.syn->seq[_isel].modm[step_sel], i, j))-1)*3.9, 255,255,255,255);
+		}
+	}
+}
+// omix target
+for(int i=0; i<OSC_PER_TONE; i++){
+	sg_rect r={modm_target_basex+(knob_size+1)*OSC_PER_TONE, i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+		if(G.syn->seq[_isel].modm[step_sel]==NULL){
+			seq_modm(G.syn->seq+_isel, &(G.syn->tone[_isel].mod_mat), step_sel);
+			gup_seq=1;
+		}
+		mlatch = syn_modm_addr( G.syn->seq[_isel].modm[step_sel], i, -1 );
+
+		mlatch_min=0;
+		mlatch_max=1.0;
+		mlatch_factor=0.01;
+		mlatch_v=1;
+		gup_mlatch=1;
+	}
+	if(G.syn->seq[_isel].modm[step_sel]==NULL)
+		sg_drawtex(knob_tex, r.x, r.y, tone_omix(G.syn->tone+_isel, i, -1)*300, 55,55,55,255);
+	else
+		sg_drawtex(knob_tex, r.x, r.y, *syn_modm_addr(G.syn->seq[_isel].modm[step_sel], i, -1)*300, 155,155,255,255);
+}
+// tone gain
+int gain_basex = modm_target_basex + (knob_size+1)*(OSC_PER_TONE)+knob_size+1 +knob_size/2;
+{
+	sg_rect r={gain_basex, gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+		mlatch = &G.syn->tone[_isel].gain;
+		mlatch_min=0;
+		mlatch_max=1;
+		mlatch_factor=0.01;
+		mlatch_v=1;
+		gup_mlatch=1;
+	}
+	sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].gain*300, 255,5,5,255);
+}
+int penv_adsr_basex = gain_basex;
+for(int j=0; j<4; j++){
+	// if(j>i)break;
+	sg_rect r={penv_adsr_basex, (j+1)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+		switch(j){
+			case 0: mlatch = &(G.syn->tone[_isel].pitch_env.a); mlatch_adsr=j; break;
+			case 1: mlatch = &(G.syn->tone[_isel].pitch_env.d); mlatch_adsr=j; break;
+			case 2: mlatch = &(G.syn->tone[_isel].pitch_env.s); mlatch_adsr=j; break;
+			case 3: mlatch = &(G.syn->tone[_isel].pitch_env.r); mlatch_adsr=j; break;
+		}
+		mlatch_min=0.001;
+		mlatch_max= j==2? 1.0 : j==3? 10.0 : 3.0;
+		mlatch_factor= j==3? .1 : j==2? 0.01 : 0.05;
+		mlatch_v=1;
+		mlatch_adsr_pitch=1;
+	}
+	switch(j){
+		case 0: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env.a * 310/3 , 255,155,155,255); break;
+		case 1: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env.d * 310/3 , 255,255,255,255); break;
+		case 2: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env.s * 310   , 155,155,255,255); break;
+		case 3: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env.r * 310/10, 155,255,155,255); break;
+	}
+}
+// pitch env amt
+{
+	sg_rect r={penv_adsr_basex, (5)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+		mlatch=&G.syn->tone[_isel].pitch_env_amt;
+		mlatch_min=0.0;
+		mlatch_max= 15;
+		mlatch_factor= 0.05;
+		mlatch_v=1;
+		mlatch_adsr_pitch=1;
+	}
+	sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel].pitch_env_amt * 310/15, 255,255,155,255);
+}
+
+// virtual keyboard
+int vkb_h = 32;
+int vkb_basey = BASE_SCREEN_HEIGHT-vkb_h;
+int vkb_keys = 12*2+1;
+int vkb_endx = 0;
+if(gup_vkb || Mouse.py<= vkb_basey){
+	sg_rect r = {0, vkb_basey, BASE_SCREEN_WIDTH, vkb_h, 255, 255,255,255, 0,0};
+	if(gup_vkb) sg_clear_area(r.x, r.y, r.w, r.h);
+	r.w=((float)BASE_SCREEN_WIDTH)/vkb_keys;
+	// r.x+=2;
+	for(int o = 0 ; o < 3; o++ ){
+		int notei=0;
+		for(int i = 0 ; i <= 13; i++){
+			if(o>=2 && i>=1) break;
+
+			char black = i%2;
+			// r.h = black? vkb_h/2 : vkb_h;
+			r.r = black? 55 : 255;
+			r.g = black? 55 : 255;
+			r.b = black? 55 : 255;
+
+			if(i!=0 && (i==5 || i==13)) continue;
+			char collision = (!mlatch || mlatch==phony_latch_vkb) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r);
+			// if(collision || voices[((-9+notei+o*12)-C0)%MAX_KEYS].tone != -1 ) r.b=0;
+			if(collision || voices[((notei+o*12+octave*12))%MAX_KEYS].tone != -1 ) r.b=0;
+
+			if(collision && (!vkb_note_active || vkb_note!=-9+notei+o*12)) {
+				mlatch = phony_latch_vkb;
+				if(vkb_note!=-9+notei+o*12){
+					key_update(vkb_note, 0);
+				}
+				key_update(-9+notei+o*12, 1);
+				vkb_note = -9+notei+o*12;
+				vkb_note_active =1;
+			}
+			notei++;
+
+			if(gup_vkb) sg_drawrect(r);
+			r.r = 0;
+			r.g = 0;
+			r.b = 0;
+			if(gup_vkb) sg_drawperim(r);
+			r.x += ((float)BASE_SCREEN_WIDTH)/(vkb_keys)-1;
+		}
+	}
+	vkb_endx = r.x;
+}
+
+
+// gui_transport();
+// play/rec button
+{
+	int sx=0,sy=0;
+	sg_texsize(gplay_tex, &sx,&sy);
+	sg_rect r = {2, vkb_basey-sy, sx, sy, 0,0,0,0, 0,0};
+	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+		Mouse.b0 = 0;
+		syn_pause(G.syn);
+	}
+	char p = G.syn->seq_play;
+	sg_drawtex(gplay_tex, r.x, r.y, 0, p?255:55, 55, 55, 255);
+
+//rec
+	int rsx=0,rsy=0;
+	sg_texsize(rec_tex, &rsx,&rsy);
+	if(gup_rec){
+		gup_rec=0;
+		// sg_clear_area( 2+sx, vkb_basey-rsx, 40, 8);
+		sg_drawtex( rec_tex, 2+sx, vkb_basey-rsy, 0, 255*rec, 55, 55, 255);
+	}
+
+	sg_rect rrec={2+sx, vkb_basey-rsy, rsx, rsy, 0,0,0,0, 0,0};
+	sg_drawperim(rrec);
+	if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, rrec)){
+		Mouse.b0=0;
+		gup_rec=1;
+		rec=!rec;
+	}
+}
+
+
+
+
+
+/*----------------------------------------------------------------------------*/
+/* end GUI */
+/*----------------------------------------------------------------------------*/
+
+if (kbget(SDLK_LEFT )){
+	key_delay++;
+	if(key_delay==0){ key_delay=-6;
+		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+			G.syn->seq[_isel].len=MAX(G.syn->seq[_isel].len-1, 1)      ;gup_seq=1;}
+		else astep( step_sel-1);
+	}
+}
+if (kbget(SDLK_RIGHT)){
+	key_delay++;
+	if(key_delay==0){ key_delay=-6;
+		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+			G.syn->seq[_isel].len=MIN(G.syn->seq[_isel].len+1, SEQ_LEN);gup_seq=1;}
+		else astep( step_sel+1);
+	}
+}
+if (kbget(SDLK_UP)){ //kbset(SDLK_UP, 0);
+	key_delay++;
+	if(key_delay==0){ key_delay=-6;
+		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+			G.syn->seq[_isel].spb=MIN(G.syn->seq[_isel].spb+1, SEQ_LEN);
+			gup_spb=1;
+			gup_seq=1;
+		} else {step_add++;gup_step_add=1;}
+	}
+}
+if (kbget(SDLK_DOWN )){ //kbset(SDLK_DOWN, 0);
+	key_delay++;
+	if(key_delay==0){ key_delay=-6;
+		if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+			G.syn->seq[_isel].spb=MAX(G.syn->seq[_isel].spb-1, 1);
+			gup_spb=1;
+			gup_seq=1;
+		} else if(step_add>0) {step_add--; gup_step_add=1;}
+	}
+}
+
+
+if(kbget(SDLK_DELETE)){
+	gup_shown_notes=1;
+	if(!(kbget(SDLK_RALT) || kbget(SDLK_LALT) || kbget(SDLK_ALTERASE))){
+		seq_anof(G.syn->seq+_isel, step_sel);
+		note_cols[_isel][step_sel]=0;
+	}
+	seq_modm(G.syn->seq+_isel, NULL, step_sel);
+	gup_seq=1;
+}
+
+if(kbget(SDLK_EQUALS)){
+	if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)){
+		kbset(SDLK_EQUALS, 0);
+		kb_octave( kb_octave(-1) +1);
+		// octave++;
+		// octave=CLAMP(octave, 0, MAX_OCTAVE);
+		// 	note_scrollv += 12;
+		// 	note_scrollv = CLAMP(note_scrollv, 0, (MAX_OCTAVE-1)*12-1);
+		// 	gup_shown_notes=1;
+	}
+}
+if(kbget(SDLK_MINUS)){
+	if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)){
+		kbset(SDLK_MINUS, 0);
+		kb_octave( kb_octave(-1) -1);
+		// octave--;
+		// octave=CLAMP(octave, 0, MAX_OCTAVE);
+		// 	note_scrollv -= 12;
+		// 	note_scrollv = CLAMP(note_scrollv, 0, (MAX_OCTAVE-1)*12-1);
+		// 	gup_shown_notes=1;
+	}
+}
+// case '-': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) octave--; break;
+// case '=': if(kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) octave++; break;
+if(kbget(tap_tempo_key)){
+	kbset(tap_tempo_key, 0);
+	if(tap_tempo == -1){
+		tap_tempo=G.time;
+	} else {
+		float target_bpm = 1.f / ((G.time-tap_tempo) / 60.0);
+		syn_bpm(G.syn, target_bpm);
+		tap_tempo=-1;
+		gup_bpm=1;
+	}
+}
+if(1.f / ((G.time-tap_tempo) / 60.0)<tap_tempo_min_bpm) tap_tempo=-1;
+
+gui_quit_dialog();
+
+}
+
+
+
+
+
+void gui_quit_dialog(void){
+	if(request_quit){
+		int border = 10;
+		int sx=0,sy=0, syesx=0, snox=0;
+		sg_texsize( quitd_tex, &sx, &sy );
+		sg_rect r = {BASE_SCREEN_WIDTH/2 - sx/2 - border, BASE_SCREEN_HEIGHT/2 - sy/2 - border, sx + border*2, sy*2 + border*2, 255,0,0,255, 0,0};
+		sg_clear_area(r.x, r.y, r.w, r.h);
+		sg_drawtex( quitd_tex, r.x+border, r.y+border, 0, 255,150+100*tri((frame%60)/60.0),150+100*tri((frame%60)/60.0),255);
+		sg_drawtex( quitd_tex_no,  r.x+border, r.y+sy+border, 0, 255,255,255,255);
+
+		sg_texsize( quitd_tex_no, &snox, NULL);
+		sg_rect rno = {r.x+border-2, r.y+sy+border-2, snox+2, sy+2, 155,155,255,255, 0,0};
+		char click_no = ptbox(Mouse.px, Mouse.py, rno);
+		if(click_no) sg_drawperim(rno);
+		click_no = click_no && Mouse.b0;
+
+		sg_texsize( quitd_tex_yes, &syesx, NULL );
+		sg_drawtex( quitd_tex_yes, r.x+r.w-syesx-border, r.y+sy+border, 0, 155,0,0,255);
+		sg_rect ryes = {r.x+r.w-syesx-border-2, r.y+sy+border-2, syesx+2, sy+2, 255,0,0,255, 0,0};
+		char click_yes = ptbox(Mouse.px, Mouse.py, ryes);
+		if(click_yes) sg_drawperim(ryes);
+		click_yes = click_yes && Mouse.b0;
+
+		sg_drawperim( r );
+		if(kbget(SDLK_ESCAPE) || click_no || (Mouse.b0 && !click_yes && !ptbox(Mouse.px, Mouse.py, r)) ) { request_quit=0; sg_clear_area(r.x, r.y, r.w, r.h); }
+		if(kbget(SDLK_RETURN) || click_yes) running=0;
+	}
+}
+
+
+
+
+
+
+
+
+
+
+char note_color[12]={2,1,0,1,0,0,1,0,1,0,1,0};
+
+
+int16_t note_grid_tex;
+char note_grid_init=0;
+#define note_grid_pxsize_x (BASE_SCREEN_WIDTH-20-11)
+#define note_grid_pxsize_y (BASE_SCREEN_HEIGHT-16/*-15*/)
+rgba8 note_grid_pixels[note_grid_pxsize_x*note_grid_pxsize_y];
+int note_grid_size_x = (BASE_SCREEN_WIDTH-32)/16;
+int note_grid_size_y = (BASE_SCREEN_HEIGHT-16) / (12*1+1);
+
+
+
+struct {
+	uint8_t dur;
+	uint8_t vel;
+} shown_notes[13][16];
+
+void gui_patternview(void){
+	if(!note_grid_init){
+		for(int x=0; x<note_grid_pxsize_x; x++){
+			for(int y=0; y<note_grid_pxsize_y; y++){
+
+				note_grid_pixels[y*note_grid_pxsize_x+x].c = 0x000000FF;
+
+				if(!(x%note_grid_size_x) || !(y%note_grid_size_y))
+					note_grid_pixels[y*note_grid_pxsize_x+x].c = 0xFFFFFFFF;
+
+			}
+		}
+		note_grid_tex = sg_addtex(note_grid_pixels, note_grid_pxsize_x, note_grid_pxsize_y);
+		note_grid_init=1;
+	}
+
+
+// vkb
+int vkb_h = BASE_SCREEN_HEIGHT-16;
+int vkb_w = 20;
+int vkb_basey = 16;
+int vkb_keys = 12*1+1;
+int vkb_endx = 0;
+int vkb_endy = 0;
+if(gup_vkb || Mouse.py<= vkb_basey){
+	sg_rect r = {-1, vkb_basey, vkb_w, vkb_h,  255,255,255,255, 0,0};
+	if(gup_vkb) sg_clear_area(r.x, r.y, r.w, r.h);
+	r.h=((float)BASE_SCREEN_HEIGHT)/vkb_keys;
+	r.y=BASE_SCREEN_HEIGHT-((float)vkb_h)/(vkb_keys);
+
+	int notei=0;
+	for(int i = 0 ; i < 13; i++){
+		int isC=0;
+		int color_index = (i+note_scrollv)%12;
+		if(color_index<0) color_index+=12;
+		char black = note_color[color_index];
+		if(black>1) {black=0; isC=1;}
+		r.r = black? 55 : 255;
+		r.g = black? 55 : 255;
+		r.b = black? 55 : 255;
+
+		char collision = (!mlatch || mlatch==phony_latch_vkb) && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r);
+		if(collision || voices[((notei+note_scrollv/*-(octave-4)*12*/))/*%MAX_KEYS*/].tone != -1 ) r.b=0;
+		// if(collision || voices[  ].tone != -1 ) r.b=0;
+
+		if(collision && (!vkb_note_active || vkb_note!=C0+notei+note_scrollv-(octave-4)*12)) {
+			mlatch = phony_latch_vkb;
+			if(vkb_note!=C0+notei+note_scrollv-(octave-4)*12){
+				key_update(vkb_note, 0);
+			}
+			key_update(C0+notei+note_scrollv-(octave-4)*12, 1);
+			vkb_note = C0+notei+note_scrollv-(octave-4)*12;
+			vkb_note_active =1;
+		}
+		notei++;
+
+		if(gup_vkb) sg_drawrect(r);
+		// if(gup_vkb && isC) sg_drawtext(Cn_tex[(C0+notei+note_scrollv)/12+4], r.x, r.y, 0, 55,55,55,255);
+		if(gup_vkb && isC)
+			sg_drawtext(Cn_tex[(int)MAPVAL((float)C0+notei+note_scrollv, C0, C0+(MAX_OCTAVE-1)*12, 0, (MAX_OCTAVE-1))],
+			r.x, r.y, 0, 55,55,55,255);
+		r.r = 0;
+		r.g = 0;
+		r.b = 0;
+		if(gup_vkb) sg_drawperim(r);
+		r.y -= ((float)vkb_h)/(vkb_keys)-1;
+	}
+	vkb_endy = r.y + ((float)vkb_h)/(vkb_keys);
+}
+
+// note grid
+if(gup_shown_notes){
+	gup_shown_notes=0;
+	for(int i=0; i<13; i++)
+		for(int j=0; j<16; j++)
+			shown_notes[i][j].dur = 0;
+
+	for(int i=0; i<13; i++){
+		for(int j=0; j<16; j++){
+			for(int v=0; v<POLYPHONY; v++){
+				if(G.syn->seq[_isel].note[v][j+note_scrollh] == C0+i+note_scrollv){
+					shown_notes[i][j].dur = G.syn->seq[_isel].dur[v][j+note_scrollh];
+					shown_notes[i][j].vel = G.syn->seq[_isel].vel[v][j+note_scrollh];
+				}
+			}
+		}
+	}
+}
+if(gup_note_grid){
+	// gup_note_grid=0;
+	int ng_basex = vkb_w-1;
+	// int ng_basey = vkb_basey;
+	int ng_basey = vkb_endy;
+	int ng_px = note_grid_size_x;
+	int ng_py = note_grid_size_y;
+	sg_clear_area(ng_basex, ng_basey, ng_px*16, ng_py*13);
+	sg_drawtex(note_grid_tex, ng_basex, ng_basey, 0, 55,55,55,255);
+	for(int i = 0; i < 13; i++)
+	for(int j = 0; j < 16; j++){
+		sg_rect r = {ng_basex + j*ng_px, BASE_SCREEN_HEIGHT -/*ng_basey +*/ (i+1)*ng_py, ng_px, ng_py, 255,0,0,255, 0,0};
+		if((!mlatch && ptbox(Mouse.px, Mouse.py, r))){
+			sg_rect rn =r;
+			rn.x++;
+			int dx = Mouse.px - r.x;
+			int dy = Mouse.py - r.y;
+			rn.w=dx;
+			rn.y+=dy;
+			rn.h=ng_py-dy-1;
+			rn.g=255;
+			sg_drawrect(rn);
+
+			if(Mouse.b0 || Mouse.b1 || kbget(SDLK_DELETE)){
+				int overwrite=-1;
+				for(int v =0; v<POLYPHONY; v++){
+					if(G.syn->seq[_isel].note[v][j+note_scrollh] == C0+i+note_scrollv){
+						overwrite=v;
+						break;
+					}
+				}
+				if( overwrite >=0 ){
+					seq_nof(G.syn->seq+_isel, j+note_scrollh, overwrite);
+					note_cols[_isel][j+note_scrollh]--;
+				}
+				if(Mouse.b0 && dx>1 && ng_py-dy>1){
+					char err=seq_non(G.syn->seq+_isel, j+note_scrollh, C0+i+note_scrollv, ((float)rn.h)/(ng_py-2), ((float)rn.w)/(ng_px-1));
+					if(!err)note_cols[_isel][j+note_scrollh]++;
+				}
+				// Mouse.b0=0;
+				gup_shown_notes=1;
+				gup_step_bar=1;
+			}
+		}
+		if(shown_notes[i][j].dur > 0){
+			r.x++;/* r.y++;*/
+			r.w--; r.h--;
+			r.w *= shown_notes[i][j].dur / 255.f;
+			// r.y += ng_py*shown_notes[i][j].vel / 255.f;
+			// r.h -= ng_py*shown_notes[i][j].vel / 255.f;
+			r.h *= shown_notes[i][j].vel / 255.f;
+			r.y += ng_py - r.h-1;
+			sg_drawrect(r);
+		}
+	}
+
+}
+// step bar
+if(gup_step_bar || Mouse.b0 || mlatch==phony_latch_scrollh) {
+	int ng_px = note_grid_size_x;
+	// static int mpx=0;
+	// gup_step_bar=0;
+	// static shvel
+	note_scrollh_pos += note_scrollh_vel;
+	note_scrollh_pos = CLAMP(note_scrollh_pos, 0, SEQ_LEN-16);
+	note_scrollh_vel*=.9;
+	if(fabsf(note_scrollh_vel)<0.01) { gup_step_bar=0;}
+	sg_rect r = {vkb_w, vkb_endy-16-2, BASE_SCREEN_WIDTH-vkb_w-11-2, 16, 0,0,0,255, 0,0};
+	if(mlatch==phony_latch_scrollh || (Mouse.b0 && ptbox(Mouse.px, Mouse.py, r))){
+		gup_step_bar=1;
+		mlatch=phony_latch_scrollh;
+		note_scrollh_vel-=((float)Mouse.sdx)/screen_width*ng_px/4;
+		if(Mouse.sdx*Mouse.sdx == 0) note_scrollh_vel=0;
+		// mpx=Mouse.px;
+
+	}
+	note_scrollh = note_scrollh_pos;
+	// note_scrollh = CLAMP(note_scrollh, 0, SEQ_LEN-16);
+	if(gup_step_bar)gup_shown_notes=1;
+
+	sg_clear_area(r.x, r.y, r.w, r.h);
+	for(int i=0; i<16; i++){
+		if(G.syn->seq[_isel].step == i+note_scrollh)
+			sg_drawtext( step_bar_tex[i+note_scrollh], r.x, r.y, 0, 255, 255, 55, 255 );
+		else if(G.syn->seq[_isel].len <= i+note_scrollh)
+			sg_drawtext( step_bar_tex[i+note_scrollh], r.x, r.y, 0, 55, 55, 55, 255 );
+		else sg_drawtext( step_bar_tex[i+note_scrollh], r.x, r.y, 0, 150+105*sign(note_cols[_isel][i+note_scrollh]), 150, 150, 255 );
+
+		r.x+=ng_px;
+	}
+	sg_drawrect(r);
+}
+if(step!=pstep){gup_step_bar=1;}
+
+// vscroll bar
+{
+	int vs_basex = note_grid_size_x*16+vkb_w;
+	sg_rect r = {vs_basex, 16, 12, BASE_SCREEN_HEIGHT, 0,0,0,255, 0 ,0};
+	sg_drawrect(r);
+	if(mlatch==phony_latch_scrollv || (Mouse.b0 && !mlatch && ptbox(Mouse.px, Mouse.py, r))){
+		// r.y = MAPVAL(((float)note_scrollv), 0, (float)(MAX_OCTAVE-1)*12, 0, (float)(BASE_SCREEN_HEIGHT-16));
+		mlatch = phony_latch_scrollv;
+		// note_scrollv = ((BASE_SCREEN_HEIGHT-Mouse.py)/(BASE_SCREEN_HEIGHT))*((MAX_OCTAVE)*12);
+		note_scrollv = MAPVAL(Mouse.py, 16, BASE_SCREEN_HEIGHT, (MAX_OCTAVE-1)*12-1, 0);
+		note_scrollv = CLAMP(note_scrollv, 0, (MAX_OCTAVE-1)*12-1);
+		gup_shown_notes=1;
+
+	}
+
+	r.y = ((float)((MAX_OCTAVE-1)*12-1)-note_scrollv)/((MAX_OCTAVE-1)*12-1) * (BASE_SCREEN_HEIGHT-16) +8;
+	r.h = 16;
+	r.b = 255;
+	sg_drawperim(r);
+}
+
+if(Mouse.wy){
+	note_scrollv += Mouse.wy;
+	note_scrollv = CLAMP(note_scrollv, 0, (MAX_OCTAVE-1)*12-1);
+	gup_shown_notes=1;
+}
+
+if(Mouse.wx){
+	note_scrollh += Mouse.wx;
+	note_scrollh = CLAMP(note_scrollh, 0, SEQ_LEN-16);
+	gup_shown_notes=1;
+	gup_step_bar=1;
+}
+
+if(kbget(SDLK_PAGEUP)){
+	kbset(SDLK_PAGEUP, 0);
+	kb_octave( kb_octave(-1) +1);
+}
+if(kbget(SDLK_PAGEDOWN)){
+	kbset(SDLK_PAGEDOWN, 0);
+	kb_octave( kb_octave(-1) -1);
+}
+
+
+	gui_quit_dialog();
+}

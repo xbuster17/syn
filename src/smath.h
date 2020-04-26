@@ -37,7 +37,7 @@ float tri(float t);
 float tri2(float t);
 float sqr(float t);
 float pul(float t, float d);
-uint32_t hashi32(uint32_t x);
+uint32_t syn_hashi32(uint32_t x);
 float wnoiz(float t);
 float noise(void);
 float db2vol(float db);

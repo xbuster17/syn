@@ -21,4 +21,4 @@ syn
 /android
 
 # testing ports
-/src/backends
+/src/gui-backends
