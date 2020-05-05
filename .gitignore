@@ -22,3 +22,8 @@ syn
 
 # testing ports
 /src/gui-backends
+
+# ignore exports
+*.syns
+*.synp
+*.synt

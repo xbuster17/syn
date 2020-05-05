@@ -20,11 +20,12 @@
 
 #define SYN_TONES 12
 #define POLYPHONY 6
-#define OSC_PER_TONE 6 // min 3
+#define OSC_PER_TONE 6 // min 3, max 255
 #define VEL_OUT 4
 #define ARP_LEN 32
 #define SEQ_LEN 64
 #define SEQ_STEP_PER_BEAT_DEF 4
+#define SONG_MAX 256
 
 typedef struct {int8_t tone, voice;} noteid;
 
@@ -46,10 +47,10 @@ typedef struct {
 
 	float pwm[OSC_PER_TONE];
 	float phase[OSC_PER_TONE];
+	float oct[OSC_PER_TONE];
 	float time [POLYPHONY][OSC_PER_TONE];
 
 	float freq[POLYPHONY];
-
 	syn_mod_mat mod_mat;
 	// [i][i] is the freq_ratio of operator i
 	// [i][j] is the index of modulation recieved by operator i from modulator j if j<i
@@ -137,7 +138,6 @@ typedef struct syn{
 	int sr;
 	float master_detune;
 	SDL_mutex* mutex;
-
 	float* longbufl; // circular 1 second mono buffer
 	float* longbufr; // circular 1 second mono buffer
 	int longbuf_len;
@@ -146,15 +146,14 @@ typedef struct syn{
 	float threshold;
 	float ratio;
 
+	float gain;
 	float rmsl;
 	float rmsr;
 	int rms_window;
 	float vupeakl;
 	float vupeakr;
-	// float vupeak_maxl;
-	// float vupeak_maxr;
 
-	syn_tone tone[SYN_TONES];
+	syn_tone* tone[SYN_TONES];
 	// syn_tone tone_target[SYN_TONES];
 	// syn_mod_mat* modm_storage; // stores SYN_TONES * SEQ_LEN mod matrices for automation
 	// int8_t modm_storage_active[SYN_TONES][SEQ_LEN];
@@ -168,14 +167,41 @@ typedef struct syn{
 //step sequencer
 	float bpm;
 	char seq_play;
-	syn_seq seq[SYN_TONES];
+	syn_seq* seq[SYN_TONES];
+
+//song
+	syn_seq* song;
+	syn_tone* song_tones; // tone on a separate array to help  cache proximity
+	uint8_t* song_pat;
+	uint8_t* song_beat_dur;
+	float* song_bpm; // todo: how would gui for this work?
+	char* song_tie; // bool, transfers the state (eg,freq,voices) of the next pattern
+	char song_advance;
+	char song_loop;
+	uint8_t song_pos;
+	// uint8_t song_beat;
+	uint8_t song_loop_begin;
+	uint8_t song_loop_end;
+	// int song_cap;
+	int song_len;
+	int song_spb;
+	// int song_loop_count;
+	float song_time;
+
 } syn;
 
 void syn_init(syn* s, int sr);
 void syn_quit(syn* s);
 void syn_run(syn* s, float* buffer, int len); // len: number of stereo samples to process
 void syn_lock(syn* s, char l); // 1:lock 0:unlock
-
+void syn_song_init(syn* s);
+void syn_song_free(syn* s);
+void syn_song_advance(syn* s, float secs);
+int syn_song_pos(syn* s, int pos); // pos<0 to query, loads target position
+int syn_song_pat(syn* syn, int pos, int pat); // pat<0 to query, assigns a pattern to a position
+int syn_song_dur(syn* syn, int pos, int dur); // dur<0 to query
+int syn_song_len(syn* syn, int len);
+char syn_song_tie(syn* syn, int pos, char tie); // tie<0 to query
 //note control
 noteid syn_non(syn* s, int instr, float note, float vel);
 void syn_nof(syn* s, noteid nid);
@@ -190,10 +216,12 @@ void syn_pause(syn* s);
 void syn_stop(syn* s);
 float syn_bpm(syn*s , float bpm); // bpm<0 to avoid setting
 
+void syn_tone_init(syn_tone* s, int sr);
 // osc fm
 float tone_frat(syn_tone* t, int osc, float freq_ratio); // <0 to avoid setting
 float tone_index(syn_tone* t, int carrier, int modulator, float fm_index); // <0 to avoid setting; carrier > modulator
 float tone_omix(syn_tone* t, int osc, float mix); // <0 to avoid setting
+float syn_oct_mul(float oct_val); // gets the frequency multiplier from the tone octave value
 // osc amp env adsr
 float tone_atk(syn_tone* t, int osc, float a); // a<0 to avoid setting
 float tone_dec(syn_tone* t, int osc, float d); // d<0 to avoid setting
@@ -247,12 +275,47 @@ float* syn_modm_addr(syn_mod_mat*, int carrier, int modulator); // c=m to get ra
 
 
 
-void syn_song_load(syn* syn, void* data, int len);
-void syn_seq_load(syn* syn, void* data, int len);
+// void syn_song_load(syn* syn, void* data, int len);
+// void syn_seq_load(syn* syn, void* data, int len);
+
+/*
+TONE FILE
+	if file has information for more oscilators than what the current syn was compiled for
+	that is, if osc >= OSC_PER_TONE, then it's value is ignored
+	FILE description:
+		first 4 bytes must equal "SYNT"
+		then it's read by chunks of 8 bytes where:
+		byte 0 is a flag from enum synt_flag: SYNT_* <255
+		bytes 1-3 has additional information for which osc the flag refers to and modulator/carrier ids
+		bytes 4-7 is a float value for the current flag
+		after an arbitrary amount of chunks it ends with a chunk with SYNT_END==255 as flag (end chunk)
+*/
+int syn_tone_open(syn* syn, char* path, int instr );
+int syn_tone_save(syn* syn, syn_tone* t, char* path);
+
+// returns !0 on error, fills read with the number of bytes read including end chunk
+int syn_tone_load(syn* syn, int instr, void* data, int len, int* read);
+int syn_tone_read(syn* syn, syn_tone* t, void* data, int len, int* read);
+int syn_tone_write(syn* syn, syn_tone* t, FILE* f);
 
 
+int syn_seq_open(syn*, char* path, int instr);
+int syn_seq_save(syn*, syn_seq*, char*path);
+int syn_seq_load(syn*, int instr, void* data, int len, int*read);
+
+int syn_seq_write(syn*, syn_seq*, FILE* f);
+int syn_seq_read(syn*, syn_seq*, void* data, int len, int*read);
 
 
+int syn_song_open(syn*, char* path);
+int syn_song_save(syn*, char* path);
+
+int syn_song_write(syn*, FILE* f);
+int syn_song_load(syn*, void* data, int len, int*read);
+
+//todo
+int syn_render(syn* s, FILE* f);
+int syn_render_wav(syn* s, char* path);
 
 
 
