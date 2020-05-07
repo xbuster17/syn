@@ -212,19 +212,45 @@ char syn_song_tie(syn* syn, int pos, char tie){ assert(syn);
 	return ret;
 }
 
+void syn_song_loop(syn* syn, int begin, int end){ if(!syn) return;
+	if(begin>=0){
+		begin = MIN(begin, SONG_MAX-1);
+		syn->song_loop_begin = MIN( end>=0? end: syn->song_loop_end, begin);
+	}
+	if(end>=0){
+		end = MIN(end, SONG_MAX-1);
+		syn->song_loop_end = MAX( begin>=0? begin: syn->song_loop_begin, end);
+	}
+}
+
+
 void syn_song_advance(syn* s, float secs){
 	float bps = s->bpm/60.0;
 	float stb = secs * bps*s->song_spb;
-	if( s->song_advance && s->song_beat_dur[syn_song_pos(s,-1)] != 0 ){
+	if(s->song_beat_dur[syn_song_pos(s,-1)] != 0 ){
 		s->song_time += stb;
-		if( s->song_time+stb >= s->song_beat_dur[ syn_song_pos(s,-1) ] * s->song_spb){
-			if( syn_song_pos(s,-1)+1 > syn_song_len(s,-1) ){
-				syn_stop(s);
-				return;
+
+		if( s->song_advance && s->song_time+stb >= s->song_beat_dur[ syn_song_pos(s,-1) ] * s->song_spb){
+
+			if(s->song_loop){
+				if(syn_song_pos(s,-1)+1 > s->song_loop_end){
+					secs=0;
+					syn_song_pos( s, s->song_loop_begin);
+				} else {
+					secs=0;
+					syn_song_pos( s, syn_song_pos(s,-1) +1);
+				}
+			} else {
+				if( syn_song_pos(s,-1)+1 > syn_song_len(s,-1) ){
+					syn_stop(s);
+					return;
+				}
+				secs=0;
+				syn_song_pos( s, syn_song_pos(s,-1) +1);
 			}
-			secs=0;
-			syn_song_pos( s, syn_song_pos(s,-1) +1);
+
 		}
+		s->song_time = fmodf(s->song_time, s->song_beat_dur[ syn_song_pos(s,-1) ] * s->song_spb);
 	}
 	syn_seq_advance(s, secs);
 }
@@ -1397,19 +1423,10 @@ int syn_seq_write(syn* syn, syn_seq* seq, FILE* f){
 
 	for(int step=0; step<seq->len; step++){
 		if(seq->modm[step] != NULL){
-			// write single value to indicate presence
-			// memset(token, 0, 4);
-			// token[0] = SYNP_MODM;
-			// token[1] = step;
-			// token[2] = 0;
-			// token[3] = 0;
-			// value = tone_base.mod_mat[0][0];
-			// fwrite(token, 1, 4, f);
-			// fwrite(&value, 4, 1, f);
 			// write each value that differs from blank modm ( no unused positions filter )
 			for(int i=0; i<OSC_PER_TONE; i++){
 				for(int j=0; j<OSC_PER_TONE; j++){
-					if( (*(seq->modm[step]))[i][j] != tone_target->mod_mat[i][j]){
+					// if( (*(seq->modm[step]))[i][j] != tone_target->mod_mat[i][j]){
 						memset(token, 0, 4);
 						token[0] = SYNP_MODM;
 						token[1] = step;
@@ -1418,7 +1435,7 @@ int syn_seq_write(syn* syn, syn_seq* seq, FILE* f){
 						value = (*(seq->modm[step]))[i][j];
 						fwrite(token, 1, 4, f);
 						fwrite(&value, 4, 1, f);
-					}
+					// }
 				}
 			}
 		}
@@ -1640,6 +1657,13 @@ int syn_song_write(syn* s, FILE* f){
 	}
 
 	memset(token, 0, 4);
+	token[0] = SYNS_LOOP;
+	token[1] = s->song_loop_begin;
+	token[2] = s->song_loop_end;
+	token[3] = s->song_loop;
+	fwrite(token, 1, 4, f);
+
+	memset(token, 0, 4);
 	token[0] = SYNS_END;
 	fwrite(token, 1, 4, f);
 
@@ -1703,7 +1727,8 @@ int syn_song_load(syn* s, void* data, int len, int*read){
 				s->bpm+=((float)f2)/255;
 				break;
 
-			case SYNS_LOOP: s->song_loop_begin=f0; s->song_loop_end=f1; break;
+			case SYNS_LOOP: s->song_loop_begin=f0; s->song_loop_end=f1;s->song_loop=f2; break;
+			// case SYNS_LOOP: syn_song_loop(s, f0, f1); s->song_loop=f2; break;
 
 			case SYNS_PAT: syn_song_pat(s, f0, f1); break;
 			case SYNS_BDUR: syn_song_dur(s, f0, f1); break;
@@ -1720,4 +1745,27 @@ int syn_song_load(syn* s, void* data, int len, int*read){
 	end:;
 	syn_lock(s, 0);
 	return err;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+int syn_render(syn* s, FILE* f){
+	assert(s);
+	(void)f;
+	return 0;
+}
+int syn_render_wav(syn* s, char* path){
+	assert(s);
+	(void)path;
+	return 0;
 }

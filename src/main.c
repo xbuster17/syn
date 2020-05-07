@@ -10,7 +10,6 @@
 	#include <3ds.h>
 	#include <citro2d.h>
 #endif
-
 #ifdef __vita__
 	#include <psp2/kernel/processmgr.h>
 	#include "debugScreen.h"
@@ -341,6 +340,7 @@ SDL_SetRenderDrawBlendMode(G.renderer, SDL_BLENDMODE_BLEND);
 sg_target(G.tone_view_tex);
 	G.tone_view_tex = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, screen_width, screen_height);
 	sg_target(G.tone_view_tex);
+	sg_clear();
 
 	G.pattern_view_tex = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, screen_width, screen_height);
 
@@ -415,6 +415,8 @@ void init_voices(void){
 // int SDL_main(int argc, char**argv){ (void)argv, (void)argc;
 
 void main_loop(void);
+void gui_quit(void);
+
 int main(int argc, char**argv){ (void)argv, (void)argc;
 	memset(&G, 0, sizeof(G));
 	G.syn = malloc( sizeof (syn) );
@@ -447,6 +449,7 @@ if(SDL_IsTextInputActive()) SDL_StopTextInput();
 
 	{ // quit();
 		sg_quit();
+		gui_quit();
 		#ifndef _3DS
 			if (SDL_JoystickGetAttached(joystick)) {
 				SDL_JoystickClose(joystick);
@@ -547,6 +550,7 @@ char gup_shown_notes=1; // which notes are drawn in the pattern view
 char gup_step_bar=1; // pattern view
 char gup_note_grid=1;
 char gup_song=1;
+char gup_lib=1;
 
 // save dialog
 #define SONG_NAME_MAX 32
@@ -560,7 +564,7 @@ char save_requested=0;
 
 int16_t save_dialog_text_tex;
 // int16_t save_dialog_overwrite_tex;
-int16_t save_type_tex[3];
+int16_t save_type_tex[4];
 
 int16_t song_tex[SONG_MAX];
 int song_pos=0;
@@ -653,6 +657,8 @@ float* phony_latch_pat = (float*)8;
 float* phony_latch_pat_dur = (float*)9;
 float* phony_latch_song_scroll = (float*)10;
 float* phony_latch_song_len = (float*)11;
+float* phony_latch_loop_begin = (float*)12;
+float* phony_latch_loop_end = (float*)13;
 int song_scroll=0;
 int mlatch_song_pat=0;
 int giselh=16; // height of intrument select / instrument vumeter
@@ -668,12 +674,36 @@ int gadst_basey=0;
 
 int key_delay=-1;
 
+// will replace the last character with a letter for each tone
+#define TMP_CP_BUF_NAME "/tmp/.tmp_syn_copy_buffer_ "
+char pattern_copy=0; // presence of copy buffer
+FILE* pattern_copy_file[SYN_TONES]; // tmp files copy buffer
+
 char gui_inited =0;
 void gui_init(void);
+
+
+void gui_quit(void){
+	for(int i=0; i<SYN_TONES; i++){
+		fclose(pattern_copy_file[i]);
+	}
+	char* name = strdup(TMP_CP_BUF_NAME);
+	for(int i=0; i<SYN_TONES; i++){
+		name[ strlen(name)-1 ]=i+'a';
+		remove(name);
+	}
+	free(name);
+}
 
 void gui_init(void){
 	gui_inited=1;
 
+	char* name = strdup(TMP_CP_BUF_NAME);
+	for(int i=0; i<SYN_TONES; i++){
+		name[ strlen(name)-1 ]=i+'a';
+		pattern_copy_file[i] = fopen(name, "wb");
+	}
+	free(name);
 	// libview_init();
 
 	memset( bpm_text,0,16);
@@ -752,6 +782,7 @@ void gui_init(void){
 	save_type_tex[0] = sg_addtext("Song");
 	save_type_tex[1] = sg_addtext("Seq ");
 	save_type_tex[2] = sg_addtext("Tone");
+	save_type_tex[3] = sg_addtext("Wave");
 
 }
 
@@ -827,6 +858,7 @@ void main_loop(void){
 					sg_target(G.pattern_view_tex);
 					gup_step_bar=1;
 					gup_note_grid=1;
+					rec=0;
 					break;
 				default:break;
 			}
@@ -835,8 +867,10 @@ void main_loop(void){
 
 		if((kbget(SDLK_LCTRL)||kbget(SDLK_RCTRL)) && kbget(SDLK_l)){
 			kbset(SDLK_l, 0);
+			rec=0;
 			gui_view=2; // start lib view
-			sg_target(G.tone_view_tex);
+			sg_target(G.lib_view_tex);
+			gup_lib=1;
 		}
 
 
@@ -957,6 +991,8 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 					#endif
 					case SDLK_MENU: syn_pause(G.syn); break;
 
+					case SDLK_KP_ENTER: kbset(SDLK_RETURN, e.key.timestamp); break;
+
 					case SDLK_ESCAPE:
 						// if(!request_quit && !save_requested){
 						// 	kbset(SDLK_ESCAPE, 0);
@@ -1055,6 +1091,7 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 				}
 			} else { // text editing
 				switch(e.key.keysym.sym){
+					case SDLK_KP_ENTER: kbset(SDLK_RETURN, e.key.timestamp); break;
 					case SDLK_LEFT: song_name_cursor = MAX(song_name_cursor-1, 0); break;
 					case SDLK_RIGHT: song_name_cursor = MIN(song_name_cursor+1, (int)strnlen(song_name, SONG_NAME_MAX-1) ); break;
 					case SDLK_DELETE:
@@ -1078,6 +1115,8 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 			kbstate[ e.key.keysym.scancode % kbstate_max ] = 0;
 			if(!SDL_IsTextInputActive())
 			switch(e.key.keysym.sym){
+				case SDLK_KP_ENTER: kbset(SDLK_RETURN, 0); break;
+
 #if 1
 				case 'q': key_update(-9+0 +12, 0); break; //do 5
 				case '2': key_update(-9+1 +12, 0); break;
@@ -1913,7 +1952,7 @@ int kb_octave(int o){
 
 
 
-
+char follow=0;
 
 void gui_toneview(void){
 /*----------------------------------------------------------------------------*/
@@ -1930,7 +1969,7 @@ void gui_toneview(void){
 		r.y=0;
 		r.w=giselw;
 		r.h=giselh;
-		if((!mlatch || (mlatch==phony_latch_isel)) && Mouse.b0 && ptboxe(Mouse.px, Mouse.py, r))
+		if(!save_requested && (!mlatch || (mlatch==phony_latch_isel)) && Mouse.b0 && ptboxe(Mouse.px, Mouse.py, r))
 			{isel(i); mlatch=phony_latch_isel;}
 
 		r.g=(_isel==i) * 255;
@@ -2056,7 +2095,7 @@ void gui_toneview(void){
 		}
 	}
 	//seq mouse selection
-	if((!mlatch || (mlatch==phony_latch_seq)) && Mouse.b0){
+	if(!save_requested && (!mlatch || (mlatch==phony_latch_seq)) && Mouse.b0){
 		float vlen = (float)(gseqh)/(POLYPHONY+1);
 		sg_rect r = {0, gseq_basey, BASE_SCREEN_WIDTH, (POLYPHONY+1)*vlen+8, 0,0,0,0,0,0};
 		if(ptbox( Mouse.px, Mouse.py, r)){
@@ -2070,6 +2109,8 @@ void gui_toneview(void){
 
 	//active step
 	int step=G.syn->seq[_isel]->step;
+	if(follow) astep(step);
+
 	sg_clear_area(0, gseq_basey+gseqh, BASE_SCREEN_WIDTH, 8);
 	sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step+1, gseq_basey+gseqh, 0, 255,255,255,255);
 	sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step_sel+1, gseq_basey+gseqh+4, 0, 255,0,0,255);
@@ -2102,13 +2143,13 @@ void gui_toneview(void){
 			sg_rect r={toct_basex , i*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
 			if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
 				mlatch = &G.syn->tone[_isel]->oct[i];
-				mlatch_min=-5;
-				mlatch_max=5.0;
+				mlatch_min=-10;
+				mlatch_max=10.0;
 				mlatch_factor=0.1;
 				mlatch_v=1;
 				gup_mlatch=1;
 			}
-			sg_drawtex(knob_tex, r.x, r.y, MAPVAL(G.syn->tone[_isel]->oct[i], -5, 5, 0, 360), 255,255,155,255);
+			sg_drawtex(knob_tex, r.x, r.y, MAPVAL(G.syn->tone[_isel]->oct[i], -10, 10, 0, 360), 255,255,155,255);
 		}
 	}
 	// modm
@@ -2422,10 +2463,12 @@ void gui_toneview(void){
 			// index
 			char apat=syn_song_pos(G.syn, -1)==song_scroll+i;
 			char post_end=song_scroll+i > syn_song_len(G.syn, -1);
+			char in_loop = G.syn->song_loop && song_scroll+i>=G.syn->song_loop_begin && song_scroll+i<=G.syn->song_loop_end;
 			rgba8 icol={.c=0xFFFFFFFF};
 			{ icol.r =55; icol.g=155; icol.b=155; }
 			if(apat){ icol.r =255; icol.g=55; icol.b=55;}
 			if(post_end){ icol.g=55; icol.b=55;}
+			if(in_loop){ icol.r=255; icol.g=255; icol.b=55;}
 			sg_drawtex(song_tex[ song_scroll+i ], r.x, r.y, 0, icol.r, icol.g, icol.b ,255);
 			r.y+=9;
 			if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
@@ -2525,6 +2568,51 @@ void gui_toneview(void){
 		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r))
 			mlatch=phony_latch_song_len;
 	}
+	{// song advance
+		sg_rect r = {BASE_SCREEN_WIDTH-8, vkb_basey-12, 7, 7, 255,255,255,255,0,0};
+		sg_clear_area(r.x, r.y, r.w, r.h);
+		if(G.syn->song_advance)
+			sg_drawrect(r);
+		else
+			sg_drawperim(r);
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			G.syn->song_advance = !G.syn->song_advance;
+			Mouse.b0=0;
+		}
+	}
+	{// song loop
+		sg_rect r = {BASE_SCREEN_WIDTH-8 -32-8, vkb_basey-12, 7, 7, 255,255,255,255,0,0};
+		sg_clear_area(r.x, r.y, r.w, r.h);
+		if(G.syn->song_loop)
+			sg_drawrect(r);
+		else
+			sg_drawperim(r);
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			G.syn->song_loop = !G.syn->song_loop;
+			Mouse.b0=0;
+			gup_song=1;
+		}
+		rgba8 col = {.r=255, .g=255,.b=255,.a=255};
+		if(!G.syn->song_loop) {col.r=55;col.g=55;col.b=55;}
+		r.w=16;
+		r.h=8;
+
+		r.x+=8;
+		sg_clear_area(r.x, r.y, r.w, r.h);
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = phony_latch_loop_begin;
+		}
+		sg_drawtext(song_tex[G.syn->song_loop_begin], r.x, r.y, 0, col.r, col.g, col.b, 255);
+
+		r.x+=16;
+		sg_clear_area(r.x, r.y, r.w, r.h);
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = phony_latch_loop_end;
+		}
+		sg_drawtext(song_tex[G.syn->song_loop_end], r.x, r.y, 0, col.r, col.g, col.b, 255);
+	}
+	if(mlatch == phony_latch_loop_begin) gup_song=1, syn_song_loop(G.syn, G.syn->song_loop_begin - Mouse.sdy, -1);
+	if(mlatch == phony_latch_loop_end) gup_song=1, syn_song_loop(G.syn, -1, G.syn->song_loop_end - Mouse.sdy);
 
 	// song shortcuts
 	{
@@ -2586,7 +2674,6 @@ void gui_toneview(void){
 		gup_step_bar=1;
 	}
 	prev_song_pos=song_pos;
-
 
 
 
@@ -2673,6 +2760,50 @@ void gui_toneview(void){
 	if(kbget(SDLK_RETURN)){ kbset(SDLK_RETURN,0);
 		if(G.syn->seq_play) syn_stop(G.syn);
 		else syn_pause(G.syn);
+	}
+	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_a)){ kbset(SDLK_a,0);
+		G.syn->song_advance = !G.syn->song_advance;
+	}
+	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_r)){ kbset(SDLK_r,0);
+		rec=!rec;
+		gup_rec=1;
+	}
+	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_f)){ kbset(SDLK_f,0);
+		follow=!follow;
+	}
+
+	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && (kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) && kbget(SDLK_l)){
+		kbset(SDLK_l,0);
+		gup_song=1;
+		G.syn->song_loop = !G.syn->song_loop;
+	}
+
+	// copy/paste
+	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_c)){ kbset(SDLK_c,0);
+		for(int i=0; i<SYN_TONES; i++){
+			pattern_copy_file[i] = freopen(NULL,"wb",pattern_copy_file[i]);
+			syn_seq_write(G.syn, G.syn->seq[i], pattern_copy_file[i]);
+			fflush(pattern_copy_file[i]);
+		}
+		pattern_copy=1;
+	}
+	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_v)){ kbset(SDLK_v,0);
+		if(pattern_copy)
+			for(int i=0; i<SYN_TONES; i++){
+				if(seq_mute(G.syn->seq[i], -1)) continue;
+				pattern_copy_file[i] = freopen(NULL, "rb", pattern_copy_file[i]);
+				fseek(pattern_copy_file[i], 0, SEEK_END);
+				long len = ftell(pattern_copy_file[i]);
+				void* mem = alloca(len);
+				rewind(pattern_copy_file[i]);
+				fread(mem, 1, len, pattern_copy_file[i]);
+				int read=0;
+				int err=syn_seq_read(G.syn, G.syn->seq[i], mem, len, &read);
+				if(err) printf("copy buffer file read error\n");
+				gup_seq=1;
+				gup_osc=1;
+				// free(mem);
+			}
 	}
 }
 
@@ -2819,6 +2950,7 @@ void gui_patternview(void){
 	int vkb_keys = 12*1+1;
 	int vkb_endx = 0;
 	int vkb_endy = 0;
+	if(!save_requested)
 	if(gup_vkb || Mouse.py <= vkb_basey){
 		sg_rect r = {-1, vkb_basey, vkb_w, vkb_h,  255,255,255,255, 0,0};
 		if(gup_vkb) sg_clear_area(r.x, r.y, r.w, r.h);
@@ -2888,7 +3020,7 @@ void gui_patternview(void){
 		if((Mouse.b0||Mouse.b1|| Mouse.dx!=0 || Mouse.dy!=0) && ptbox(Mouse.px, Mouse.py, r))
 			gup_note_grid=1;
 	}
-	if(gup_note_grid){
+	if(!save_requested && gup_note_grid){
 		gup_note_grid=0;
 		int ng_basex = vkb_w-1;
 		// int ng_basey = vkb_basey;
@@ -2980,7 +3112,7 @@ void gui_patternview(void){
 	if(step!=pstep){gup_step_bar=1;}
 
 	// vscroll bar
-	{
+	if(!save_requested){
 		int vs_basex = note_grid_size_x*16+vkb_w;
 		sg_rect r = {vs_basex, 16, 12, BASE_SCREEN_HEIGHT, 0,0,0,255, 0 ,0};
 		sg_drawrect(r);
@@ -3111,18 +3243,30 @@ void gui_save_dialog(void){
 	if(click_yes) sg_drawperim(ryes);
 	click_yes = click_yes && Mouse.b0;
 
-	sg_rect st = {BASE_SCREEN_WIDTH-8*4*3, 1, 4*8, 8, 255,255,255,255, 0,0};
+	// save type selection
+	sg_rect st = {BASE_SCREEN_WIDTH-8*4*4, 1, 4*8, 8, 255,255,255,255, 0,0};
+	if(ptbox(Mouse.px, Mouse.py, st)) sg_drawperim(st);
 	if(Mouse.b0 && ptbox(Mouse.px, Mouse.py, st))
 		save_type=0;
 	sg_drawtext(save_type_tex[0], st.x, st.y, 0, 255, save_type==0?55:255, save_type==0?55:255, 255);
+
 	st.x+=4*8;
+	if(ptbox(Mouse.px, Mouse.py, st)) sg_drawperim(st);
 	if(Mouse.b0 && ptbox(Mouse.px, Mouse.py, st))
 		save_type=1;
 	sg_drawtext(save_type_tex[1], st.x, st.y, 0, 255, save_type==1?55:255, save_type==1?55:255, 255);
+
 	st.x+=4*8;
+	if(ptbox(Mouse.px, Mouse.py, st)) sg_drawperim(st);
 	if(Mouse.b0 && ptbox(Mouse.px, Mouse.py, st))
 		save_type=2;
 	sg_drawtext(save_type_tex[2], st.x, st.y, 0, 255, save_type==2?55:255, save_type==2?55:255, 255);
+
+	st.x+=4*8;
+	if(ptbox(Mouse.px, Mouse.py, st)) sg_drawperim(st);
+	if(Mouse.b0 && ptbox(Mouse.px, Mouse.py, st))
+		save_type=3;
+	sg_drawtext(save_type_tex[3], st.x, st.y, 0, 255, save_type==3?55:255, save_type==3?55:255, 255);
 
 
 
@@ -3154,6 +3298,10 @@ void gui_save_dialog(void){
 			case 2:
 				memcpy(final_song_name+name_len, ".synt", 6);
 				err=syn_tone_save(G.syn, G.syn->tone[_isel], final_song_name);
+				break;
+			case 3:
+				memcpy(final_song_name+name_len, ".wav", 5);
+				err=syn_render_wav(G.syn, final_song_name);
 				break;
 		}
 
@@ -3216,7 +3364,6 @@ DIR* dir = NULL;
 
 int selection=0;
 
-char gup_lib=1;
 char gup_lib_names=1;
 
 int libcd(char* d);
@@ -3351,6 +3498,11 @@ void libview_quit(void){
 void gui_libview(void){
 	if(!libview_was_init) libview_init();
 
+	if(gup_lib){
+		gup_lib=0;
+		chdir(base_dir_path);
+		libcd(strdup(base_dir_path));
+	}
 	if(Mouse.wy){
 		directory_scroll-=Mouse.wy;
 		directory_scroll = CLAMP(directory_scroll, 0, MAX(file_counter-FILES_MAX, 0));
@@ -3452,8 +3604,7 @@ void gui_libview(void){
 
 	if(kbget(SDLK_ESCAPE) && !request_quit){
 		kbset(SDLK_ESCAPE, 0);
-		chdir(base_dir_path);
-		libcd(strdup(base_dir_path));
+
 		gui_view=0;
 		gup_mlatch=1;
 		gup_rec=1;

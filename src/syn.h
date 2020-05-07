@@ -177,15 +177,15 @@ typedef struct syn{
 	float* song_bpm; // todo: how would gui for this work?
 	char* song_tie; // bool, transfers the state (eg,freq,voices) of the next pattern
 	char song_advance;
-	char song_loop;
 	uint8_t song_pos;
-	// uint8_t song_beat;
+
 	uint8_t song_loop_begin;
 	uint8_t song_loop_end;
-	// int song_cap;
+	char song_loop;
+
 	int song_len;
 	int song_spb;
-	// int song_loop_count;
+
 	float song_time;
 
 } syn;
@@ -202,6 +202,8 @@ int syn_song_pat(syn* syn, int pos, int pat); // pat<0 to query, assigns a patte
 int syn_song_dur(syn* syn, int pos, int dur); // dur<0 to query
 int syn_song_len(syn* syn, int len);
 char syn_song_tie(syn* syn, int pos, char tie); // tie<0 to query
+void syn_song_loop(syn* syn, int begin, int end); // <0 to avoid setting
+
 //note control
 noteid syn_non(syn* s, int instr, float note, float vel);
 void syn_nof(syn* s, noteid nid);
