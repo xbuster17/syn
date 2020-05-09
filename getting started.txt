@@ -63,6 +63,7 @@ Usage:
 		each block is made of a sequence for each tone, and each sequence is made of it's notes and the tone settings.
 		song steps are the order in which the blocks are played,
 		a song step can be assigned to any block and played for up to 64 beats.
+		left click on a block number to jump to it.
 
 		if song advance is on, song is played until it's length is reached or step FF is done.
 		if song loop is on song will be played normally until loop point and then loop forever.
@@ -85,3 +86,7 @@ Usage:
 		allowing multiple fm algorythms.
 
 		each tone also has a gain knob and a pitch envelope generator.
+
+		when editing a knob it's value is displayed in the top,
+		while holding left click, you can round value to nearest integer by right clicking anywhere.
+		hold shift while dragging a knob for finer control.
