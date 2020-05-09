@@ -428,8 +428,9 @@ float tone_omix(syn_tone* t, int osc, float mix){
 // len: number of stereo samples to process
 void syn_run(syn* s, float* buffer, int len){ assert(s && buffer);
 	syn_lock(s,1);
-	s->vupeakl*=.9;
-	s->vupeakr*=.9;
+	if(s->vupeakl>=1)s->vupeakl*=.99; else s->vupeakl*=.9;
+	if(s->vupeakr>=1)s->vupeakr*=.99; else s->vupeakr*=.9;
+	// s->vupeakr*=.9;
 	float a[OSC_PER_TONE];
 
 	if(s->seq_play) syn_song_advance(s, ((float)len)/(s->sr) );

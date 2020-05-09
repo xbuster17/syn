@@ -673,6 +673,7 @@ int gadsr_basex=0;
 int gadst_basey=0;
 
 int key_delay=-1;
+char follow=0; // active step will follow play position
 
 // will replace the last character with a letter for each tone
 #define TMP_CP_BUF_NAME "/tmp/.tmp_syn_copy_buffer_ "
@@ -982,7 +983,7 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 #ifndef _3DS
 		case SDL_KEYDOWN:
 			if(!SDL_IsTextInputActive()){
-				if(e.key.repeat) break;
+				if(e.key.repeat && gui_view!=2) break;
 				kbstate[ e.key.keysym.scancode % kbstate_max ] = e.key.timestamp;
 				key_delay=-1;
 				switch(e.key.keysym.sym){
@@ -1019,8 +1020,8 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 					case SDLK_PAUSE: syn_pause(G.syn); break;
 					case SDLK_CAPSLOCK: rec=!rec; gup_rec=1; break;
 
-					case SDLK_HOME: astep(0); break;
-					case SDLK_END: astep(G.syn->seq[_isel]->len-1); break;
+					case SDLK_HOME: follow=0; astep(0); break;
+					case SDLK_END: follow=0; astep(G.syn->seq[_isel]->len-1); break;
 
 					case SDLK_INSERT: astep(step_sel + step_add); break;
 
@@ -1092,6 +1093,8 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 			} else { // text editing
 				switch(e.key.keysym.sym){
 					case SDLK_KP_ENTER: kbset(SDLK_RETURN, e.key.timestamp); break;
+					case SDLK_HOME: song_name_cursor = 0; break;
+					case SDLK_END: song_name_cursor = (int)strnlen(song_name, SONG_NAME_MAX-1); break;
 					case SDLK_LEFT: song_name_cursor = MAX(song_name_cursor-1, 0); break;
 					case SDLK_RIGHT: song_name_cursor = MIN(song_name_cursor+1, (int)strnlen(song_name, SONG_NAME_MAX-1) ); break;
 					case SDLK_DELETE:
@@ -1111,7 +1114,7 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 			}
 			break;
 		case SDL_KEYUP:
-			if(e.key.repeat) break;
+			if(e.key.repeat && gui_view!=2) break;
 			kbstate[ e.key.keysym.scancode % kbstate_max ] = 0;
 			if(!SDL_IsTextInputActive())
 			switch(e.key.keysym.sym){
@@ -1952,7 +1955,6 @@ int kb_octave(int o){
 
 
 
-char follow=0;
 
 void gui_toneview(void){
 /*----------------------------------------------------------------------------*/
@@ -2681,7 +2683,7 @@ void gui_toneview(void){
 /*----------------------------------------------------------------------------*/
 /* controlls  */
 /*----------------------------------------------------------------------------*/
-	if (kbget(SDLK_LEFT )){
+	if (kbget(SDLK_LEFT )){ follow=0;
 		key_delay++;
 		if(key_delay==0){ key_delay=-6;
 			if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
@@ -2689,7 +2691,7 @@ void gui_toneview(void){
 			else astep( step_sel-1);
 		}
 	}
-	if (kbget(SDLK_RIGHT)){
+	if (kbget(SDLK_RIGHT)){ follow=0;
 		key_delay++;
 		if(key_delay==0){ key_delay=-6;
 			if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
@@ -3224,7 +3226,7 @@ void gui_save_dialog(void){
 	if(strlen(song_name)!=0) sg_drawtext(song_name_tex, 1, 10, 0, 255,255,255,255);
 	else  sg_drawtext(song_name_empty_tex, 1, 10, 0, 155,155,155,255);
 
-	sg_rect cursor_rect = { 6*song_name_cursor, 10, 1, 11, 255,0,0,155, 0,0};
+	sg_rect cursor_rect = { 6*song_name_cursor+1, 10, 1, 11, 255,0,0,155, 0,0};
 	sg_drawperim(cursor_rect);
 
 	int snox=0, syesx=0;
@@ -3542,6 +3544,19 @@ void gui_libview(void){
 	if(kbget(SDLK_DOWN)){ kbset(SDLK_DOWN,0);
 		selection++;
 		selection=CLAMP(selection, 0, MIN(FILES_MAX-1, file_counter-1));
+	}
+
+	if(kbget(SDLK_HOME)){ kbset(SDLK_HOME,0);
+		selection=0;
+		directory_scroll=0;
+		libscroll(directory_scroll);
+	}
+	if(kbget(SDLK_END)){ kbset(SDLK_END,0);
+		selection=FILES_MAX-1;
+		selection=CLAMP(selection, 0, MIN(FILES_MAX-1, file_counter-1));
+		directory_scroll=file_counter;
+		directory_scroll = CLAMP(directory_scroll, 0, MAX(file_counter-FILES_MAX, 0));
+		libscroll(directory_scroll);
 	}
 
 	if(kbget(SDLK_BACKSPACE)){

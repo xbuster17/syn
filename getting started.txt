@@ -1,0 +1,87 @@
+Shortcuts:
+	select tone: F1-F12
+	toggle tone mute: space+F1-F12
+	toggle rec: ctrl+R or caps lock
+	toggle play: enter
+	toggle pause: pause break
+	toggle loop: ctrl+shift+L
+	toggle song advance: ctrl+A
+	save: ctrl+S
+	load/library: ctrl+L
+	copy pattern blocks: ctrl+C
+	paste pattern blocks: ctrl+V (doesnt overwrite muted tones)
+	toggle tone/seq edit view: tab
+
+	tone view:
+		left-right, home-end: select active step
+		up-down: step add
+		ctrl left-right: pattern duration
+		ctrl up-down: steps per beat of selected instrument
+		keypad minus: tap tempo
+
+		song:
+			pageup-down: pattern assigned to song step
+			ctrl pageup-down: prev/next song step
+			ctrl home/end: jump to begining/end of song
+
+	pattern view:
+		pageup-down: change octave
+
+	library view:
+		pageup-down, home-end, up-down: navigation
+		enter: load selected file
+		backspace: go up one directory
+
+Usage:
+	playing:
+		play notes by pressing keys on the (computer) keyboard or by clicking on the virtual keyboard.
+		the notes are arrenged as so (QWERTY us layout):
+			 ______________________
+			||2|3|||5|6|7|||9|0|||=|
+			||_|_|||_|_|_|||_|_|||_|
+			|Q|W|E|R|T|Y|U|I|O|P|[|]|
+			|_|_|_|_|_|_|_|_|_|_|_|_|
+			 ___________________
+			||S|D|||G|H|J|||L|;||
+			||_|_|||_|_|_|||_|_||
+			|Z|X|C|V|B|N|M|,|.|/|
+			|_|_|_|_|_|_|_|_|_|_|
+
+	composing:
+		when record is enabled, note input get added to the sequencer for the selected instrument at the active step.
+		when you release all notes, they get added to the active step and active step advances by step add amount.
+		press delete to erase all notes on the active step.
+
+		to edit notes you can use pattern view, in here each grid position represents a step, when a step is active
+		a rectangle gets drawn on the grid, it's height represents note velocity and it's width is note duration.
+		add steps by left clicking the grid, remove them by right clicking.
+
+		use the vertical scroll bar on the right (or octave shortcuts) to navigate pitch,
+		use the top horizontal scroll bar (where the step numbers are located) to navigate steps.
+
+		song are composed of 255 blocks (0 to FF) visible in the song bar in tone view,
+		each block is made of a sequence for each tone, and each sequence is made of it's notes and the tone settings.
+		song steps are the order in which the blocks are played,
+		a song step can be assigned to any block and played for up to 64 beats.
+
+		if song advance is on, song is played until it's length is reached or step FF is done.
+		if song loop is on song will be played normally until loop point and then loop forever.
+		if step tie is on, envelopes will carry between blocks, each step can decide to tie independantly of block.
+
+		if record is active and changes are made to the automation matrix, an automation mark gets added to the sequencer step
+		at the active step, these can be deleted without erasing the notes by pressing shift+delete
+
+	tone editing:
+		tones or instruments can be edited in the tone view with the knobs.
+		a tone is composed by multiple oscilators, each oscilator has waveform, pitch, modulation parameters, mix
+		and an amplitude envelope generator (EG) with 4 phases (attack, sustain, decay, release)
+
+		modulation matrix parameters and mix (carrier amount) can be automated per step.
+
+		the modulation matrix consists of a frequency ratio per osc and an index of modulation for
+		each oscilator before it (osc 3 can be a carrier for osc 2 and 1 but not vice-versa).
+
+		oscilator mix parameter lets every oscilator output it's generated value to the mix
+		allowing multiple fm algorythms.
+
+		each tone also has a gain knob and a pitch envelope generator.
