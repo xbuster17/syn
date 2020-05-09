@@ -1334,7 +1334,7 @@ int syn_tone_read(syn* syn, syn_tone* t, void* data, int len, int* read){
 enum synp_flag{
 	SYNP_TONE, SYNP_MODM,
 	SYNP_LEN, SYNP_SPB,
-	SYNP_NOTE,
+	SYNP_NOTE, SYNP_MUTE,
 	SYNP_END=255
 };
 // int syn_seq_write(syn* syn, syn_seq* seq, FILE* f);
@@ -1422,6 +1422,14 @@ int syn_seq_write(syn* syn, syn_seq* seq, FILE* f){
 	fwrite(token, 1, 4, f);
 	fwrite(&value, 4, 1, f);
 
+	if(seq->mute){
+		memset(token, 0, 4);
+		token[0] = SYNP_MUTE;
+		value = 0;
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+
 	for(int step=0; step<seq->len; step++){
 		if(seq->modm[step] != NULL){
 			// write each value that differs from blank modm ( no unused positions filter )
@@ -1507,6 +1515,7 @@ int syn_seq_read(syn* syn, syn_seq* seq, void* data, int len, int*read){
 		switch(flag){
 			case SYNP_LEN: seq->len=val; break;
 			case SYNP_SPB: seq->spb=val; break;
+			case SYNP_MUTE: seq->mute=1; break;
 			case SYNP_NOTE:
 				if(seq_non( seq, f0, val, f1, f2)) printf("warrning seq read too many voices\n");
 				break;

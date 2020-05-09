@@ -1802,6 +1802,9 @@ int isel(int i){
 		gup_spb = 1;
 		gup_osc = 1;
 		gup_rec = 1;
+		gup_shown_notes = 1;
+		gup_note_grid=1;
+		gup_step_bar=1;
 		mlatch = NULL;
 		ipeaks[i]=0;
 
@@ -1810,7 +1813,6 @@ int isel(int i){
 			voices[i] = (noteid){-1,-1};
 		}
 	}
-	gup_shown_notes=1;
 	return ret;
 }
 

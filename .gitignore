@@ -23,6 +23,10 @@ syn
 # testing ports
 /src/gui-backends
 
+# incomplete ports
+/n3ds
+/psvita
+
 # ignore exports
 *.syns
 *.synp
