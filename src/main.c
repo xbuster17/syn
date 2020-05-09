@@ -2117,7 +2117,7 @@ void gui_toneview(void){
 
 	sg_clear_area(0, gseq_basey+gseqh, BASE_SCREEN_WIDTH, 8);
 	sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step+1, gseq_basey+gseqh, 0, 255,255,255,255);
-	sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step_sel+1, gseq_basey+gseqh+4, 0, 255,0,0,255);
+	sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step_sel+1, gseq_basey+gseqh+4, 0, 255,follow?255:0,0,255);
 
 
 	// osc
@@ -2203,7 +2203,7 @@ void gui_toneview(void){
 					case 3: mlatch = &(G.syn->tone[_isel]->osc_env[i].r); mlatch_adsr=j; mlatch_adsr_osc=i; break;
 				}
 				mlatch_min= j==2? 0.0: 0.0002;
-				mlatch_max= j==2? 1.0 : 10.0;
+				mlatch_max= j==2? 1.0: j==3? 20.0: 10.0;
 				mlatch_factor= j==2? 0.01 : 0.1;
 				mlatch_v=1;
 			}
@@ -2211,7 +2211,7 @@ void gui_toneview(void){
 				case 0: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel]->osc_env[i].a * 310/10 , 255,155,155,255); break;
 				case 1: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel]->osc_env[i].d * 310/10 , 255,255,255,255); break;
 				case 2: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel]->osc_env[i].s * 310   , 155,155,255,255); break;
-				case 3: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel]->osc_env[i].r * 310/10, 155,255,155,255); break;
+				case 3: sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel]->osc_env[i].r * 310/20, 155,255,155,255); break;
 			}
 		}
 	}
@@ -2863,7 +2863,10 @@ void gui_quit_dialog(void){
 			gup_note_grid=1;
 			Mouse.b0=0;
 		}
-		if(kbget(SDLK_RETURN) || click_yes) running=0;
+		if(kbget(SDLK_RETURN) || click_yes) {
+			kbset(SDLK_RETURN,0);
+			running=0;
+		}
 	}
 }
 
