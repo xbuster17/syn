@@ -5,7 +5,7 @@ void syn_init(syn* s, int sr){
 	smath_init();
 	memset(s, 0, sizeof(syn));
 	s->mutex = SDL_CreateMutex();
-	if(!s->mutex) fprintf(stderr, "Couldn't create mutex\n");
+	if(!s->mutex) SYNLOG("Couldn't create mutex");
 
 	s->sr=sr;
 	s->gain=1.f;
@@ -50,9 +50,8 @@ void syn_song_init(syn* s){
 	s->song_tones = malloc(sizeof(syn_tone)*SYN_TONES*SONG_MAX);
 	for(int i = 0; i<SYN_TONES*SONG_MAX; i++){
 		syn_seq_init(s->song+i);
-		// s->song[i].tone = malloc(sizeof(syn_tone));
+		syn_tone_init(s->song_tones+i, s->sr);
 		s->song[i].tone = s->song_tones+i;
-		syn_tone_init(s->song[i].tone, s->sr);
 	}
 	for(int i = 0; i<SYN_TONES; i++){
 		s->seq[i]=s->song+i;
@@ -60,8 +59,7 @@ void syn_song_init(syn* s){
 	}
 	s->song_pat = malloc(sizeof(uint8_t)*SONG_MAX);
 	memset(s->song_pat, 0, sizeof(uint8_t)*SONG_MAX);
-	// for(int i = 0; i<SONG_MAX; i++)
-	// 	s->song_pat[i]=i;
+
 	s->song_beat_dur = malloc(sizeof(uint8_t)*SONG_MAX);
 	memset(s->song_beat_dur, 4, sizeof(uint8_t)*SONG_MAX);
 
@@ -93,7 +91,6 @@ void syn_song_free(syn* s){ assert(s);
 	free(s->song_bpm); s->song_bpm=NULL;
 	free(s->song_tie); s->song_tie=NULL;
 	s->song_pos=0;
-	// s->song_cap=0;
 	s->song_len=0;
 	s->song_time=0;
 }
@@ -602,7 +599,7 @@ noteid syn_non(syn* s, int instr, float note, float vel){ // note: semitone dist
 	}
 	// char mono = s->tone[tone]->poly_type == 0;
 	// if(!mono){
-	if(voice==-1) printf("tone %i ran out of voices %f(%fhz)\n", tone, note, freq);
+	if(voice==-1) SYNLOG("tone %i ran out of voices %f(%fhz)", tone, note, freq);
 	if(voice==-1) return (noteid){-1,-1};
 	// }
 
@@ -726,9 +723,9 @@ void syn_lock(syn* s, char l){ assert(s);
 		// status = SDL_TryLockMutex(s->mutex);
 		status = SDL_LockMutex(s->mutex);
 		switch(status) {
-			case SDL_MUTEX_TIMEDOUT: fprintf(stderr, "Couldn't lock mutex (TIMEOUT)\n");
+			case SDL_MUTEX_TIMEDOUT: SYNLOG("Couldn't lock mutex (TIMEOUT)");
 			case 0: break;
-			default : fprintf(stderr, "Couldn't lock mutex\n");
+			default : SYNLOG("Couldn't lock mutex");
 		}
 		// if(SDL_LockMutex(s->mutex)!=0) {fprintf(stderr, "Couldn't lock mutex\n");}
 	} else
@@ -1039,7 +1036,7 @@ enum synt_flag{
 int syn_tone_open(syn* syn, char* path, int instr ){ assert(syn && path && instr<SYN_TONES);
 	FILE* f=fopen(path, "rb");
 	if(f==NULL){
-		printf("couldnt open file %s\n", path);
+		SYNLOG("couldnt open file %s", path);
 		return 1;
 	}
 	rewind(f);
@@ -1055,7 +1052,7 @@ int syn_tone_open(syn* syn, char* path, int instr ){ assert(syn && path && instr
 	err=syn_tone_load(syn, instr, data, len, &read);
 
 	if(err || read!=len){
-		printf("error reading file %s, e:%i, read %i from %i\n", path, err, read, len);
+		SYNLOG("error reading file %s, e:%i, read %i from %i", path, err, read, len);
 		free(data);
 		return 1;
 	}
@@ -1067,7 +1064,7 @@ int syn_tone_open(syn* syn, char* path, int instr ){ assert(syn && path && instr
 int syn_tone_save(syn* syn, syn_tone* t, char* path){ assert(syn && t && path);
 	FILE* f=fopen(path, "wb");
 	if(f==NULL){
-		printf("couldnt open file %s\n", path);
+		SYNLOG("couldnt open file %s", path);
 		return 1;
 	}
 	int err=syn_tone_write(syn, t, f);
@@ -1241,7 +1238,7 @@ int syn_tone_read(syn* syn, syn_tone* t, void* data, int len, int* read){
 	char desc[5]; desc[4]=0;
 	memcpy( desc, data, 4 );
 	if(memcmp(desc, SYNT_DESC, 4)){
-		printf("file doesnt begin with \"%s\"\n", SYNT_DESC);
+		SYNLOG("file doesnt begin with \"%s\"", SYNT_DESC);
 		return 1;
 	}
 
@@ -1345,7 +1342,7 @@ enum synp_flag{
 int syn_seq_open(syn* syn, char* path, int instr){
 	FILE* f=fopen(path, "rb");
 	if(f==NULL){
-		printf("couldnt open file %s\n", path);
+		SYNLOG("couldnt open file %s", path);
 		return 1;
 	}
 	rewind(f);
@@ -1361,7 +1358,7 @@ int syn_seq_open(syn* syn, char* path, int instr){
 	err=syn_seq_load(syn, instr, data, len, &read);
 
 	if(err || read!=len){
-		printf("error reading file %s, e:%i, read %i from %i\n", path, err, read, len);
+		SYNLOG("error reading file %s, e:%i, read %i from %i", path, err, read, len);
 		free(data);
 		return 1;
 	}
@@ -1372,7 +1369,7 @@ int syn_seq_open(syn* syn, char* path, int instr){
 int syn_seq_save(syn* syn, syn_seq* seq, char*path){ assert(syn && seq && path);
 	FILE* f=fopen(path, "wb");
 	if(f==NULL){
-		printf("couldnt open file %s\n", path);
+		SYNLOG("couldnt open file %s", path);
 		return 1;
 	}
 	int err=syn_seq_write(syn, seq, f);
@@ -1395,19 +1392,16 @@ int syn_seq_write(syn* syn, syn_seq* seq, FILE* f){
 	uint8_t token[4]={0,0,0,0};
 	float value=0;
 
-
 	syn_tone tone_base;
 	syn_tone_init(&tone_base, syn->sr);
-	syn_tone* tone_target = &tone_base;
 
-	if(seq->tone){
-		tone_target=seq->tone;
+	if(seq->tone && memcmp(seq->tone, &tone_base, sizeof(syn_tone))){
 		memset(token, 0, 4);
 		token[0] = SYNP_TONE;
 		value = 0;
 		fwrite(token, 1, 4, f);
 		fwrite(&value, 4, 1, f);
-		if(syn_tone_write(syn, seq->tone, f)){printf("error writing tone\n"); return 2;};
+		if(syn_tone_write(syn, seq->tone, f)){SYNLOG("error writing tone"); return 2;};
 	}
 
 	memset(token, 0, 4);
@@ -1430,24 +1424,31 @@ int syn_seq_write(syn* syn, syn_seq* seq, FILE* f){
 		fwrite(&value, 4, 1, f);
 	}
 
+	syn_mod_mat* prev_modm = NULL;
+
 	for(int step=0; step<seq->len; step++){
+
 		if(seq->modm[step] != NULL){
-			// write each value that differs from blank modm ( no unused positions filter )
+			// write each value that differs from prev step modm
 			for(int i=0; i<OSC_PER_TONE; i++){
 				for(int j=0; j<OSC_PER_TONE; j++){
+					if(prev_modm)
+						if( (*(seq->modm[step]))[i][j] == (*(prev_modm))[i][j]) continue;
 					// if( (*(seq->modm[step]))[i][j] != tone_target->mod_mat[i][j]){
-						memset(token, 0, 4);
-						token[0] = SYNP_MODM;
-						token[1] = step;
-						token[2] = i;
-						token[3] = j;
-						value = (*(seq->modm[step]))[i][j];
-						fwrite(token, 1, 4, f);
-						fwrite(&value, 4, 1, f);
+					memset(token, 0, 4);
+					token[0] = SYNP_MODM;
+					token[1] = step;
+					token[2] = i;
+					token[3] = j;
+					value = (*(seq->modm[step]))[i][j];
+					fwrite(token, 1, 4, f);
+					fwrite(&value, 4, 1, f);
 					// }
 				}
 			}
+			prev_modm = seq->modm[step];
 		}
+
 		for(int voice=0; voice<POLYPHONY; voice++){
 			if(seq->note[voice][step] > SEQ_MIN_NOTE){
 				memset(token, 0, 4);
@@ -1477,7 +1478,7 @@ int syn_seq_read(syn* syn, syn_seq* seq, void* data, int len, int*read){
 	char desc[5]; desc[4]=0;
 	memcpy( desc, data, 4 );
 	if(memcmp(desc, SYNP_DESC, 4)){
-		printf("file doesnt begin with \"%s\"\n", SYNP_DESC);
+		SYNLOG("file doesnt begin with \"%s\"", SYNP_DESC);
 		return 1;
 	}
 
@@ -1517,7 +1518,7 @@ int syn_seq_read(syn* syn, syn_seq* seq, void* data, int len, int*read){
 			case SYNP_SPB: seq->spb=val; break;
 			case SYNP_MUTE: seq->mute=1; break;
 			case SYNP_NOTE:
-				if(seq_non( seq, f0, val, f1, f2)) printf("warrning seq read too many voices\n");
+				if(seq_non( seq, f0, val, f1, f2)) SYNLOG("warrning seq read too many voices");
 				break;
 			case SYNP_TONE:
 				// if(seq->tone != NULL){ printf("warrning seq read multiple tones\n"); free(seq->tone); }
@@ -1531,7 +1532,7 @@ int syn_seq_read(syn* syn, syn_seq* seq, void* data, int len, int*read){
 					// seq_modm(&seq_read, seq->tone? &seq->tone->mod_mat: &tone.mod_mat, f0);
 					seq_modm(seq, &seq->tone->mod_mat, f0);
 				}
-				if(f1>=OSC_PER_TONE || f2>=OSC_PER_TONE) {printf("warrning seq read too many oscilators\n"); break;}
+				if(f1>=OSC_PER_TONE || f2>=OSC_PER_TONE) {SYNLOG("warrning seq read too many oscilators"); break;}
 				(*(seq->modm[f0]))[f1][f2] = val;
 				break;
 			case SYNP_END: done=1; break;
@@ -1565,7 +1566,7 @@ enum syns_flag{
 int syn_song_open(syn* s, char* path){
 	FILE* f=fopen(path, "rb");
 	if(f==NULL){
-		printf("couldnt open file %s\n", path);
+		SYNLOG("couldnt open file %s", path);
 		return 1;
 	}
 	rewind(f);
@@ -1576,12 +1577,13 @@ int syn_song_open(syn* s, char* path){
 	rewind(f);
 	fread(data, len, 1, f);
 
+
 	int err=0;
 	int read=0;
 	err=syn_song_load(s, data, len, &read);
 
-	if(err || read!=len){
-		printf("error reading file %s, e:%i, read %i from %i\n", path, err, read, len);
+	if(err){
+		SYNLOG("error reading compressed file %s, e:%i, read %i", path, err, read);
 		free(data);
 		return 1;
 	}
@@ -1592,7 +1594,7 @@ int syn_song_open(syn* s, char* path){
 int syn_song_save(syn* s, char* path){
 	FILE* f=fopen(path, "wb");
 	if(f==NULL){
-		printf("couldnt open file %s\n", path);
+		SYNLOG("couldnt open file %s", path);
 		return 1;
 	}
 	int err=syn_song_write(s, f);
@@ -1602,8 +1604,13 @@ int syn_song_save(syn* s, char* path){
 
 
 
+#define TEMP_FILE_NAME "/tmp/syn_song_save_data_temp"
 
 int syn_song_write(syn* s, FILE* f){
+FILE* ftarget = f;
+FILE* ftemp = fopen(TEMP_FILE_NAME, "wb");
+assert(ftemp);
+f=ftemp;
 	fwrite(SYNS_DESC, 4, 1, f);
 
 	uint8_t token[4]={0,0,0,0};
@@ -1677,6 +1684,41 @@ int syn_song_write(syn* s, FILE* f){
 	token[0] = SYNS_END;
 	fwrite(token, 1, 4, f);
 
+	//compress
+	uint32_t fsize = ftell(f);
+	size_t sizez = fsize * 1.1 + 12;
+	uint8_t* zd = malloc(sizez);
+	void* ogdata = malloc(fsize);
+	fclose(f);
+
+	ftemp = fopen(TEMP_FILE_NAME, "rb");
+	fread(ogdata, 1, fsize, ftemp);
+
+	fclose(ftemp);
+	remove(TEMP_FILE_NAME);
+
+	int z_result = compress(zd, &sizez, ogdata, fsize);
+	switch( z_result ){
+		case Z_OK:
+			break;
+
+		case Z_MEM_ERROR:
+			SYNLOG("out of memory");
+			free(zd); free(ogdata);
+			return 1;
+			break;
+
+		case Z_BUF_ERROR:
+			SYNLOG("output buffer wasn't large enough!");
+			free(zd); free(ogdata);
+			return 2;
+			break;
+	}
+
+	fwrite(&fsize, 1,4, ftarget);
+	fwrite(zd, sizez, 1, ftarget);
+	free(zd); free(ogdata);
+
 	return 0;
 }
 
@@ -1685,11 +1727,41 @@ int syn_song_write(syn* s, FILE* f){
 
 int syn_song_load(syn* s, void* data, int len, int*read){
 	assert(len > 4);
+	//uncompress
+	uint32_t ogsize = 0;
+	memcpy(&ogsize, data, 4);
+	assert(ogsize>0);
+	void* ogdata = malloc(ogsize);
+
+	size_t ogbig_size = ogsize;
+	int z_result = uncompress(ogdata, &ogbig_size, data+4, len);
+
+	switch( z_result ){
+		case Z_MEM_ERROR:
+			SYNLOG("out of memory");
+			free(ogdata);
+			return 1;
+			break;
+		case Z_BUF_ERROR:
+			SYNLOG("output buffer wasn't large enough!");
+			free(ogdata);
+			return 2;
+			break;
+		default: break;
+	}
+	assert(ogbig_size == ogsize);
+
+
+	len = ogsize;
+	data = ogdata;
+
+	assert(len > 4);
 	char desc[5]; desc[4]=0;
 	memcpy( desc, data, 4 );
 	if(memcmp(desc, SYNS_DESC, 4)){
-		printf("file doesnt begin with \"%s\"\n", SYNS_DESC);
-		return 1;
+		SYNLOG("file doesnt begin with \"%s\"", SYNS_DESC);
+		free(ogdata);
+		return 3;
 	}
 
 	syn_lock(s, 1);
@@ -1721,10 +1793,10 @@ int syn_song_load(syn* s, void* data, int len, int*read){
 			case SYNS_LEN: s->song_len=f0; break;
 			case SYNS_SEQ:
 				if(f1>=SYN_TONES){
-					printf("warning song has too tones\n");
+					SYNLOG("warning song has too tones");
 					f1=MIN(f1, SYN_TONES-1);
 				}
-				if(syn_seq_read(s, s->song+f0*SYN_TONES+f1, data+i, len-i, &iread)){ printf("invalid song pattern\n"); err=2; goto end;}
+				if(syn_seq_read(s, s->song+f0*SYN_TONES+f1, data+i, len-i, &iread)){ SYNLOG("invalid song pattern"); err=4; goto end;}
 				i+=iread;
 				break;
 
@@ -1753,6 +1825,7 @@ int syn_song_load(syn* s, void* data, int len, int*read){
 	syn_song_pos(s, 0);
 
 	end:;
+	free(ogdata);
 	syn_lock(s, 0);
 	return err;
 }

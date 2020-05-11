@@ -33,7 +33,6 @@
 // #include <sys/soundcard.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <stdio.h>
 
 #include "syn.h"
 
@@ -2683,7 +2682,7 @@ void gui_toneview(void){
 
 
 /*----------------------------------------------------------------------------*/
-/* controlls  */
+/* controls  */
 /*----------------------------------------------------------------------------*/
 	if (kbget(SDLK_LEFT )){ follow=0;
 		key_delay++;

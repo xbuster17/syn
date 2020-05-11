@@ -15,7 +15,7 @@ CPPC = $(CROSS)g++
 PKG_CONFIG = $(CROSS)pkg-config
 SDL2_CONFIG = $(CROSS)sdl2-config
 
-LIBS = -lm $(WIN_LIBS) \
+LIBS = -lm -lz $(WIN_LIBS) \
        $(shell $(PKG_CONFIG) --cflags --libs SDL2_ttf SDL2_mixer)\
        $(shell $(SDL2_CONFIG) --cflags --libs)\
 

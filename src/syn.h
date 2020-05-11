@@ -12,7 +12,7 @@
 #include <SDL2/SDL.h> // SDL_mutex
 // #include <SDL.h> // SDL_mutex
 #endif
-
+#include <zlib.h>
 // typedef unsigned int int;
 
 #include "smath.h"
@@ -28,7 +28,9 @@
 #define SONG_MAX 256
 
 typedef struct {int8_t tone, voice;} noteid;
-
+#define SYNLOG(...) \
+	(printf("SYNLOG:%s:%i:%s: ", __FILE__, __LINE__, __func__), \
+	printf(__VA_ARGS__), printf("\n"))
 
 typedef enum {OSC_NONE=-1,
 	OSC_SINE, OSC_TRI, OSC_NOISE, OSC_SQUARE, OSC_PULSE, OSC_SAW,

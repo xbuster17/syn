@@ -1,12 +1,12 @@
+#include <string.h> // memset
 #include "adsr.h"
 
 
 static float _calc_coef(float rate, float tratio){
 	return (rate <= 0) ? 0.0 : exp(-log((1.0 + tratio) / tratio) / rate);
 }
-
 adsr adsr_make(int sr, float a,float d,float s,float r, float aexp,float drexp){
-	adsr ret;
+	adsr ret; memset(&ret, 0, sizeof(adsr));
 	// aexp =  MAPVAL( CLAMP(aexp,0,1), 0,1, MIN_RAT, MAX_RAT);
 	aexp =  CLAMP(aexp,MIN_RAT,1) * MAX_RAT;
 	// drexp = MAPVAL( CLAMP(drexp,0,1), 0,1, MIN_RAT, MAX_RAT);
