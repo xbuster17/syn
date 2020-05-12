@@ -10,17 +10,15 @@
 #include <SDL.h>
 #else
 #include <SDL2/SDL.h> // SDL_mutex
-// #include <SDL.h> // SDL_mutex
 #endif
 #include <zlib.h>
-// typedef unsigned int int;
 
 #include "smath.h"
 #include "adsr.h"
 
 #define SYN_TONES 12
 #define POLYPHONY 6
-#define OSC_PER_TONE 6 // min 3, max 255
+#define OSC_PER_TONE 6 /*min 3, max 255*/
 #define VEL_OUT 4
 #define ARP_LEN 32
 #define SEQ_LEN 64
@@ -44,7 +42,6 @@ typedef struct {
 
 	int8_t voices;
 
-	// syn_osc osc[OSC_PER_TONE];
 	int8_t osc[OSC_PER_TONE];
 
 	float pwm[OSC_PER_TONE];
@@ -66,33 +63,16 @@ typedef struct {
 	// float vel_min[VEL_OUT];
 	// float vel_max[VEL_OUT];
 
-
-	// float detune;
-	// float glide;// in milliseconds
-	// float glide_freq_target;
-	// float glide_t;
 	adsr osc_env[OSC_PER_TONE];
 	adsr pitch_env;
 
-// optimize adsr for space, saving state by itself thilse sharing adsr struct
-	// adsr amp_env[OSC_PER_TONE];
-	// adsr pitch_env[OSC_PER_TONE];
-	// adsr fmindex_env[OSC_PER_TONE];
-
+	// optimize adsr for space, saving state by itself while sharing adsr struct
 	char gate[POLYPHONY];
 	char amp_state[POLYPHONY][OSC_PER_TONE];
 	char pitch_state[POLYPHONY];
 
 	float amp_eg_out[POLYPHONY][OSC_PER_TONE];
 	float pitch_eg_out[POLYPHONY];
-
-	// char amp_states[POLYPHONY][OSC_PER_TONE];
-	// float amp_env_out[POLYPHONY][OSC_PER_TONE];
-
-	// char fmindex_states[POLYPHONY][OSC_PER_TONE];
-	// float fmindex_env_out[POLYPHONY][OSC_PER_TONE];
-
-	// adsr filter_env[POLYPHONY];
 
 	float pitch_env_amt;
 
@@ -101,13 +81,11 @@ typedef struct {
 	// float vupeak_maxl;
 	// float vupeak_maxr;
 
-	// syn_arp arp;
 } syn_tone;
 
 #define SEQ_MIN_NOTE (-32000)
 typedef struct {
 	syn_tone* tone; // tone preset
-	// syn_mod_mat* modm[SEQ_LEN]; // mod matrix per step
 	syn_mod_mat** modm; // mod matrix per step
 	short modm_target_step;
 	char modm_wait_loop;
@@ -115,7 +93,6 @@ typedef struct {
 	uint8_t spb; // step per beat
 	int8_t step;
 	float time;
-	// float freq[POLYPHONY][SEQ_LEN];
 	int16_t note[POLYPHONY][SEQ_LEN];
 	uint8_t vel[POLYPHONY][SEQ_LEN];
 	uint8_t dur[POLYPHONY][SEQ_LEN];
@@ -123,16 +100,6 @@ typedef struct {
 	char mute;
 } syn_seq;
 
-// #define SONG_MAX 0xFF
-// typedef struct {
-// 	int len;
-// 	int cap;
-// 	syn_seq seqs;
-// 	int index;
-// 	int repeat;
-// 	short loop_start;
-// 	short loop_end;
-// } syn_song;
 
 typedef struct syn{
 	int sample;
@@ -156,9 +123,6 @@ typedef struct syn{
 	float vupeakr;
 
 	syn_tone* tone[SYN_TONES];
-	// syn_tone tone_target[SYN_TONES];
-	// syn_mod_mat* modm_storage; // stores SYN_TONES * SEQ_LEN mod matrices for automation
-	// int8_t modm_storage_active[SYN_TONES][SEQ_LEN];
 
 	syn_mod_mat modm_target[SYN_TONES];
 	int8_t modm_target_active[SYN_TONES];
@@ -285,7 +249,7 @@ float* syn_modm_addr(syn_mod_mat*, int carrier, int modulator); // c=m to get ra
 /*
 TONE FILE
 	if file has information for more oscilators than what the current syn was compiled for
-	that is, if osc >= OSC_PER_TONE, then it's value is ignored
+	that is, if osc >= OSC_PER_TONE, then its value is ignored
 	FILE description:
 		first 4 bytes must equal "SYNT"
 		then it's read by chunks of 8 bytes where:
@@ -310,7 +274,9 @@ int syn_seq_load(syn*, int instr, void* data, int len, int*read);
 int syn_seq_write(syn*, syn_seq*, FILE* f);
 int syn_seq_read(syn*, syn_seq*, void* data, int len, int*read);
 
-
+// song file is a zlib compressed file where the first 4 bytes have the uncompressed size.
+// uncompressed data begins with SYNS followed by a series of 4 byte tokens where if a
+// token == SYNP a sequence follows the token, to be read with seq_read
 int syn_song_open(syn*, char* path);
 int syn_song_save(syn*, char* path);
 

@@ -17,17 +17,6 @@ void syn_init(syn* s, int sr){
 		s->modm_target_active[i] = 0;
 		s->modm_lerpt[i] = 0;
 		s->modm_lerpms[i] = 0;
-
-		// for (int j = 0; j < VEL_OUT; j++){
-		// 	s->tone[i]->vel_out[j] = NULL;
-		// 	s->tone[i]->vel_min[j] = 0;
-		// 	s->tone[i]->vel_max[j] = 4;
-		// }
-
-		// syn_tone_init(s->tone[i], sr);
-
-		// syn_seq_init(&s->seq[i]);
-
 	}
 
 	syn_song_init(s);
@@ -37,9 +26,6 @@ void syn_init(syn* s, int sr){
 
 void syn_quit(syn* s){
 	SDL_DestroyMutex(s->mutex);
-	// for(int i=0; i<SYN_TONES; i++){
-	// 	seq_unload(s->seq + i);
-	// }
 	syn_song_free(s);
 	memset(s, 0, sizeof(syn));
 }
@@ -99,9 +85,6 @@ int syn_song_pos(syn* s, int pos){ assert(s);
 	int ret = s->song_pos;
 	if(pos>=0){
 		pos=MIN(pos,SONG_MAX-1);
-		// printf("loading song position %i pattern %i \n", pos, s->song_pat[pos]);
-		// char was_playing = s->seq_play;
-		// if(was_playing) syn_stop(s);
 		for(int i=0; i<SYN_TONES; i++){
 			if(s->seq[i]){
 				syn_anof(s, i);
@@ -152,13 +135,9 @@ int syn_song_pos(syn* s, int pos){ assert(s);
 			s->seq[i]->step=-1;
 			s->seq[i]->modm_wait_loop=0;
 			s->seq[i]->modm_target_step=-1;
-			// syn_anof(s, i);
-			// for(int j=0; j<POLYPHONY; j++)
-			// 	s->seq[i]->active[j]=(noteid){-1,-1};
 		}
 		s->song_time=0;
 		s->song_pos=pos;
-		// s->seq_play=was_playing;
 
 	}
 	return ret;
