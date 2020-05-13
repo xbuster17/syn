@@ -1582,14 +1582,26 @@ int syn_song_save(syn* s, char* path){
 }
 
 
-
-#define TEMP_FILE_NAME "/tmp/syn_song_save_data_temp"
-
+#include <errno.h>
 int syn_song_write(syn* s, FILE* f){
-FILE* ftarget = f;
-FILE* ftemp = fopen(TEMP_FILE_NAME, "wb");
-assert(ftemp);
-f=ftemp;
+	FILE* ftarget = f;
+	FILE* ftemp = tmpfile();
+	if(!ftemp){
+		switch(errno){
+			case EACCES: SYNLOG("couldnt open tmpfile, EACCES: Search permission denied for directory in file's path prefix."); break;
+			case EEXIST: SYNLOG("couldnt open tmpfile, EEXIST: Unable to generate a unique filename."); break;
+			case EINTR:  SYNLOG("couldnt open tmpfile, EINTR: The call was interrupted by a signal; see signal(7)."); break;
+			case EMFILE: SYNLOG("couldnt open tmpfile, EMFILE: The per-process limit on the number of open file descriptors has been reached."); break;
+			case ENFILE: SYNLOG("couldnt open tmpfile, ENFILE: The system-wide limit on the total number of open files has been reached."); break;
+			case ENOSPC: SYNLOG("couldnt open tmpfile, ENOSPC: There was no room in the directory to add the new filename."); break;
+			case EROFS:  SYNLOG("couldnt open tmpfile, EROFS: Read-only filesystem.}"); break;
+			default: SYNLOG("couldnt open tmpfile. unknown error"); break;
+		}
+		return 1;
+	}
+
+	f=ftemp;
+
 	fwrite(SYNS_DESC, 4, 1, f);
 
 	uint8_t token[4]={0,0,0,0};
@@ -1668,13 +1680,12 @@ f=ftemp;
 	size_t sizez = fsize * 1.1 + 12;
 	uint8_t* zd = malloc(sizez);
 	void* ogdata = malloc(fsize);
-	fclose(f);
 
-	ftemp = fopen(TEMP_FILE_NAME, "rb");
+	rewind(f);
+
 	fread(ogdata, 1, fsize, ftemp);
 
 	fclose(ftemp);
-	remove(TEMP_FILE_NAME);
 
 	int z_result = compress(zd, &sizez, ogdata, fsize);
 	switch( z_result ){

@@ -674,8 +674,6 @@ int gadst_basey=0;
 int key_delay=-1;
 char follow=0; // active step will follow play position
 
-// will replace the last character with a letter for each tone
-#define TMP_CP_BUF_NAME "/tmp/.tmp_syn_copy_buffer_ "
 char pattern_copy=0; // presence of copy buffer
 FILE* pattern_copy_file[SYN_TONES]; // tmp files copy buffer
 
@@ -687,23 +685,14 @@ void gui_quit(void){
 	for(int i=0; i<SYN_TONES; i++){
 		fclose(pattern_copy_file[i]);
 	}
-	char* name = strdup(TMP_CP_BUF_NAME);
-	for(int i=0; i<SYN_TONES; i++){
-		name[ strlen(name)-1 ]=i+'a';
-		remove(name);
-	}
-	free(name);
 }
 
 void gui_init(void){
 	gui_inited=1;
 
-	char* name = strdup(TMP_CP_BUF_NAME);
 	for(int i=0; i<SYN_TONES; i++){
-		name[ strlen(name)-1 ]=i+'a';
-		pattern_copy_file[i] = fopen(name, "wb");
+		pattern_copy_file[i] = tmpfile();
 	}
-	free(name);
 	// libview_init();
 
 	memset( bpm_text,0,16);
@@ -2784,7 +2773,8 @@ void gui_toneview(void){
 	// copy/paste
 	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_c)){ kbset(SDLK_c,0);
 		for(int i=0; i<SYN_TONES; i++){
-			pattern_copy_file[i] = freopen(NULL,"wb",pattern_copy_file[i]);
+			fclose(pattern_copy_file[i]);
+			pattern_copy_file[i] = tmpfile();
 			syn_seq_write(G.syn, G.syn->seq[i], pattern_copy_file[i]);
 			fflush(pattern_copy_file[i]);
 		}
@@ -2794,7 +2784,6 @@ void gui_toneview(void){
 		if(pattern_copy)
 			for(int i=0; i<SYN_TONES; i++){
 				if(seq_mute(G.syn->seq[i], -1)) continue;
-				pattern_copy_file[i] = freopen(NULL, "rb", pattern_copy_file[i]);
 				fseek(pattern_copy_file[i], 0, SEEK_END);
 				long len = ftell(pattern_copy_file[i]);
 				void* mem = alloca(len);
@@ -3392,7 +3381,7 @@ void libview_init(void){
 }
 
 int file_counter=0;
-struct libfile* templib;
+struct libfile* templib=NULL;
 
 int libcd(char* d){
 	DIR *dirhandle = opendir(d);
@@ -3426,13 +3415,18 @@ int libcd(char* d){
 	file_counter=CLAMP(file_counter, 0, FILE_COUNTER_MAX);
 	rewinddir(dir);
 
-	if(templib) free(templib);
+	if(templib){
+		for(int i = 0; i < file_counter; i++){
+			free(templib[i].name);
+		}
+		free(templib);
+	}
 	templib=malloc(sizeof(struct libfile)*file_counter);
 	memset(templib, 0, sizeof(struct libfile)*file_counter);
 
 	for(int i=0; (de=readdir(dir)) != NULL; i++){
 		if(i>=file_counter) break;
-		templib[i].name = de->d_name;
+		templib[i].name = strdup(de->d_name);
 
 		if(templib[i].name == NULL){
 			printf("invalid or protected directory, returning to base\n");
