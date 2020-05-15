@@ -400,6 +400,8 @@ sg_target(G.tone_view_tex);
 
 	return 0;
 
+	SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+
 }
 
 
@@ -552,7 +554,7 @@ char gup_song=1;
 char gup_lib=1;
 
 // save dialog
-#define SONG_NAME_MAX 32
+#define SONG_NAME_MAX 42
 char* song_name=NULL;
 int16_t song_name_tex;
 int16_t song_name_empty_tex;
@@ -925,7 +927,8 @@ void kbset(SDL_Keycode k, int32_t v){
 }
 
 
-
+char* dropped_filedir=NULL;
+int dropped_filedir_len=0;
 int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 	SDL_Event e = *event;
 // must lock syn when activating notes from main thread
@@ -967,6 +970,36 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 				default: break;
 			}
 			break;
+
+			case SDL_DROPFILE: {
+				dropped_filedir = e.drop.file;
+				// SYNLOG("dropped file %s", dropped_filedir);
+				dropped_filedir_len = strlen(dropped_filedir);
+				if(strncmp(dropped_filedir+dropped_filedir_len-5, ".syns", 5) == 0){
+					syn_song_open(G.syn, dropped_filedir);
+					gup_song=1;
+					gup_seq=1;
+				} else if(strncmp(dropped_filedir+dropped_filedir_len-5, ".synp", 5) == 0){
+					syn_seq_open(G.syn, dropped_filedir, _isel);
+				} else if(strncmp(dropped_filedir+dropped_filedir_len-5, ".synt", 5) == 0){
+					syn_tone_open(G.syn, dropped_filedir, _isel);
+				} else SYNLOG("cannot open dropped file %s", dropped_filedir);
+				SDL_free(dropped_filedir);
+				dropped_filedir = NULL;
+				dropped_filedir_len=0;
+				gui_view=0;
+				gup_mlatch=1;
+				gup_rec=1;
+				gup_seq=1;
+				gup_osc=1;
+				gup_spb=1;
+				gup_step_add=1;
+				gup_bpm=1;
+				gup_vkb=1;
+				gup_mix=1;
+				gup_song=1;
+				break;
+			}
 #endif
 #ifndef _3DS
 		case SDL_KEYDOWN:
@@ -3405,6 +3438,13 @@ int libcd(char* d){
 
 	if(!dir) return -1;
 
+	if(templib){
+		for(int i = 0; i < file_counter; i++){
+			if(templib[i].name) free(templib[i].name);
+		}
+		free(templib);
+	}
+
 	gup_lib_names=1;
 
 	struct dirent *de;
@@ -3414,13 +3454,6 @@ int libcd(char* d){
 	if(file_counter>=FILE_COUNTER_MAX) printf("Warning! folder has more than %i files. will not read correctly!\n", FILE_COUNTER_MAX);
 	file_counter=CLAMP(file_counter, 0, FILE_COUNTER_MAX);
 	rewinddir(dir);
-
-	if(templib){
-		for(int i = 0; i < file_counter; i++){
-			free(templib[i].name);
-		}
-		free(templib);
-	}
 	templib=malloc(sizeof(struct libfile)*file_counter);
 	memset(templib, 0, sizeof(struct libfile)*file_counter);
 
@@ -3537,11 +3570,17 @@ void gui_libview(void){
 
 	if(kbget(SDLK_UP)){ kbset(SDLK_UP,0);
 		selection--;
+		if(selection<0) directory_scroll-=1;
 		selection=CLAMP(selection, 0, MIN(FILES_MAX-1, file_counter-1));
+		directory_scroll = CLAMP(directory_scroll, 0, MAX(file_counter-FILES_MAX, 0));
+		libscroll(directory_scroll);
 	}
 	if(kbget(SDLK_DOWN)){ kbset(SDLK_DOWN,0);
 		selection++;
+		if(selection>MIN(FILES_MAX-1, file_counter-1)) directory_scroll+=1;
 		selection=CLAMP(selection, 0, MIN(FILES_MAX-1, file_counter-1));
+		directory_scroll = CLAMP(directory_scroll, 0, MAX(file_counter-FILES_MAX, 0));
+		libscroll(directory_scroll);
 	}
 
 	if(kbget(SDLK_HOME)){ kbset(SDLK_HOME,0);

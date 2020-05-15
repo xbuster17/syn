@@ -2,7 +2,6 @@
 JOBS=4
 EXEC = syn
 MAIN = src/main.c
-
 CCFLAG = -std=gnu99 -g -O3 -Wall -Wextra -Wno-psabi -ffast-math -funroll-loops -D _DEFAULT_SOURCE
 CPPCFLAG = -std=gnu++11 -Wall -Wextra -g -O3
 
@@ -79,10 +78,10 @@ WIN_FLAG = CROSSOBJ=win. CROSS=i686-w64-mingw32.static- EXEC=$(WIN_EXEC) WIN_LIB
 # WIN_FLAG = CROSSOBJ=win CROSS=x86_64-w64-mingw32.static-
 
 win:
-	make -j$(JOBS) $(WIN_FLAG) && strip -s $(WIN_EXEC)
+	make -j$(JOBS) $(WIN_FLAG) && strip -s $(WIN_EXEC) && upx $(WIN_EXEC)
 
 win-run:
-	make -j$(JOBS) $(WIN_FLAG) && strip -s $(WIN_EXEC) && ./$(WIN_EXEC)
+	make -j$(JOBS) $(WIN_FLAG) && strip -s $(WIN_EXEC) && upx $(WIN_EXEC) && ./$(WIN_EXEC)
 
 win-rm:
 	make rm $(WIN_FLAG)
@@ -138,9 +137,7 @@ W=emcc -s ASSERTIONS=0  -s WASM=1 \
 	-s SINGLE_FILE=1 \
 	-s USE_ZLIB=1 \
 	-s USE_SDL=2 \
-	-s USE_SDL_MIXER=2 \
 	-s USE_SDL_TTF=2 \
-	-s USE_SDL_IMAGE=2 \
 	--shell-file www/base.html \
 	-s EXTRA_EXPORTED_RUNTIME_METHODS='["ccall", "cwrap"]'\
 	-o www/$(EXEC).html -O3 $(CPPFLAG) $(SRC)\

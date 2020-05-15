@@ -1206,14 +1206,14 @@ int syn_tone_write(syn* syn, syn_tone* t, FILE* f){
 
 
 int syn_tone_load(syn* syn, int instr, void* data, int len, int* read){
-	assert(instr < SYN_TONES);
+	if(instr >= SYN_TONES) return 1;
 	syn_tone* t = syn->tone[instr];
 	return syn_tone_read(syn, t, data, len, read);
 }
 
 
 int syn_tone_read(syn* syn, syn_tone* t, void* data, int len, int* read){
-	assert(len > 4);
+	if(len<=4) return 1;
 	char desc[5]; desc[4]=0;
 	memcpy( desc, data, 4 );
 	if(memcmp(desc, SYNT_DESC, 4)){
@@ -1358,7 +1358,7 @@ int syn_seq_save(syn* syn, syn_seq* seq, char*path){ assert(syn && seq && path);
 }
 
 int syn_seq_load(syn* syn, int instr, void* data, int len, int*read){
-	assert(instr < SYN_TONES);
+	if(instr >= SYN_TONES) return 1;
 	syn_seq* seq = syn->seq[instr];
 	// seq_unload(syn->seq[instr]);
 	return syn_seq_read(syn, seq, data, len, read);
@@ -1453,7 +1453,7 @@ int syn_seq_write(syn* syn, syn_seq* seq, FILE* f){
 
 
 int syn_seq_read(syn* syn, syn_seq* seq, void* data, int len, int*read){
-	assert(len > 4);
+	if(len<=4) return 1;
 	char desc[5]; desc[4]=0;
 	memcpy( desc, data, 4 );
 	if(memcmp(desc, SYNP_DESC, 4)){
@@ -1562,7 +1562,7 @@ int syn_song_open(syn* s, char* path){
 	err=syn_song_load(s, data, len, &read);
 
 	if(err){
-		SYNLOG("error reading compressed file %s, e:%i, read %i", path, err, read);
+		SYNLOG("error reading file %s, e:%i, read %i", path, err, read);
 		free(data);
 		return 1;
 	}
@@ -1716,11 +1716,11 @@ int syn_song_write(syn* s, FILE* f){
 
 
 int syn_song_load(syn* s, void* data, int len, int*read){
-	assert(len > 4);
+	if(len<=4) {return 1;}
 	//uncompress
 	uint32_t ogsize = 0;
 	memcpy(&ogsize, data, 4);
-	assert(ogsize>0);
+	if(ogsize<=0) { return 1; }
 	void* ogdata = malloc(ogsize);
 
 	size_t ogbig_size = ogsize;
@@ -1739,13 +1739,13 @@ int syn_song_load(syn* s, void* data, int len, int*read){
 			break;
 		default: break;
 	}
-	assert(ogbig_size == ogsize);
+	if(ogbig_size != ogsize) {free(ogdata); return 1;}
 
 
 	len = ogsize;
 	data = ogdata;
 
-	assert(len > 4);
+	if(len<=4) {free(ogdata); return 1;}
 	char desc[5]; desc[4]=0;
 	memcpy( desc, data, 4 );
 	if(memcmp(desc, SYNS_DESC, 4)){
@@ -1800,7 +1800,6 @@ int syn_song_load(syn* s, void* data, int len, int*read){
 				break;
 
 			case SYNS_LOOP: s->song_loop_begin=f0; s->song_loop_end=f1;s->song_loop=f2; break;
-			// case SYNS_LOOP: syn_song_loop(s, f0, f1); s->song_loop=f2; break;
 
 			case SYNS_PAT: syn_song_pat(s, f0, f1); break;
 			case SYNS_BDUR: syn_song_dur(s, f0, f1); break;
