@@ -12,12 +12,24 @@ void syn_init(syn* s, int sr){
 	s->bpm = 120;
 	s->seq_play = 0;
 	s->modm_lerp_mode = 0;
+	s->buflen=sr*SYN_BUFLEN_TIME;
+	s->bufpos=0;
+	s->filter_order=22;
 	for(int i =0; i<SYN_TONES; i++){
 		memset(s->modm_target+i, 0, sizeof(syn_mod_mat));
 		s->modm_target_active[i] = 0;
 		s->modm_lerpt[i] = 0;
 		s->modm_lerpms[i] = 0;
+		s->bufl[i]=malloc(s->buflen*sizeof(float));
+		s->bufr[i]=malloc(s->buflen*sizeof(float));
+		s->delay_bufl[i]=malloc(s->buflen*sizeof(float));
+		s->delay_bufr[i]=malloc(s->buflen*sizeof(float));
+		memset(s->bufl[i], 0, s->buflen*sizeof(float));
+		memset(s->bufr[i], 0, s->buflen*sizeof(float));
+		memset(s->delay_bufl[i], 0, s->buflen*sizeof(float));
+		memset(s->delay_bufr[i], 0, s->buflen*sizeof(float));
 	}
+
 
 	syn_song_init(s);
 	syn_song_pos(s, 0);
@@ -27,6 +39,12 @@ void syn_init(syn* s, int sr){
 void syn_quit(syn* s){
 	SDL_DestroyMutex(s->mutex);
 	syn_song_free(s);
+	for(int i =0; i<SYN_TONES; i++){
+		free(s->bufl[i]); s->bufl[i]=NULL;
+		free(s->bufr[i]); s->bufr[i]=NULL;
+		free(s->delay_bufl[i]); s->delay_bufl[i]=NULL;
+		free(s->delay_bufr[i]); s->delay_bufr[i]=NULL;
+	}
 	memset(s, 0, sizeof(syn));
 }
 
@@ -265,8 +283,10 @@ float syn_bpm(syn*s , float bpm){
 	// syn_lock(s, 1);
 	assert(s);
 	float ret = s->bpm;
-	if(bpm >= 0)
+	if(bpm >= 0){
+		bpm=MAX(SYN_MIN_BPM, bpm);
 		s->bpm = bpm;
+	}
 
 	// syn_lock(s, 0);
 	return ret;
@@ -399,21 +419,30 @@ float tone_omix(syn_tone* t, int osc, float mix){
 	return prev;
 }
 
-
-
+//cfilter test
+float* dstl;
+float* dstr;
+float* templ;
+float* tempr;
+float* convsrc;
+char conv_once=1;
+int cs=0;
 // len: number of stereo samples to process
 void syn_run(syn* s, float* buffer, int len){ assert(s && buffer);
+	assert(len < s->buflen);
+
 	syn_lock(s,1);
+
 	if(s->vupeakl>=1)s->vupeakl*=.99; else s->vupeakl*=.9;
 	if(s->vupeakr>=1)s->vupeakr*=.99; else s->vupeakr*=.9;
-	// s->vupeakr*=.9;
+
 	float a[OSC_PER_TONE];
 
 	if(s->seq_play) syn_song_advance(s, ((float)len)/(s->sr) );
-	// if(s->seq_play) syn_seq_advance(s, ((float)len)/(s->sr) );
 
 	for(int i=0; i<SYN_TONES; i++){
-
+		memset( s->bufl[i] + s->bufpos, 0, sizeof(float)*len);
+		memset( s->bufr[i] + s->bufpos, 0, sizeof(float)*len);
 	/* update modulation matrix */
 		if(s->modm_target_active[i]){
 			syn_modm_do_lerp(&s->tone[i]->mod_mat, s->modm_target+i, s->modm_lerpt[i]/s->modm_lerpms[i]);
@@ -424,10 +453,13 @@ void syn_run(syn* s, float* buffer, int len){ assert(s && buffer);
 			}
 		}
 
+
+		s->tone[i]->vupeakl*=.9;
+		s->tone[i]->vupeakr*=.9;
+
+
 		if(s->tone[i]->voices==0) {continue;}
 
-float voice_uvpeakl=0;
-float voice_uvpeakr=0;
 		for (int j=0; j<POLYPHONY; j++){
 
 			float vel = s->tone[i]->vel[j]/255.f;
@@ -439,15 +471,14 @@ float voice_uvpeakr=0;
 			if(any_on==0){
 				if(s->tone[i]->freq[j] > 0) s->tone[i]->voices--;
 				s->tone[i]->freq[j]=0;
+				s->tone[i]->pitch_state[j]=0;
+				s->tone[i]->pitch_eg_out[j]=0;
 				continue;
 			}
 
-			float osc_uvpeakl=0;
-			float osc_uvpeakr=0;
+			for(int smp=0; smp<len; smp++){
 
-			for(int smp=0; smp<len*2;){
-
-				// int any_on =0;
+				any_on =0;
 				for(int osc =0; osc<OSC_PER_TONE; osc++)
 					any_on += s->tone[i]->amp_state[j][osc];
 
@@ -460,7 +491,11 @@ float voice_uvpeakr=0;
 				s->tone[i]->pitch_env.state = s->tone[i]->pitch_state[j];
 				s->tone[i]->pitch_env.out   = s->tone[i]->pitch_eg_out[j];
 
-				float pitch_env = adsr_run(&s->tone[i]->pitch_env)*s->tone[i]->pitch_env_amt;
+				float pitch_env = adsr_run(&s->tone[i]->pitch_env);
+				if(s->tone[i]->pitch_env_amt < 0)
+					pitch_env *= MAPVAL(s->tone[i]->pitch_env_amt, SYN_MIN_PITCH_ENV_AMT, 0, -1, 0);
+				else
+					pitch_env *= s->tone[i]->pitch_env_amt;
 
 				s->tone[i]->pitch_state[j]  = s->tone[i]->pitch_env.state;
 				s->tone[i]->pitch_eg_out[j] = s->tone[i]->pitch_env.out;
@@ -501,30 +536,91 @@ float voice_uvpeakr=0;
 
 					// accum time
 					float frat= s->tone[i]->freq[j]*oct_mul * tone_frat(s->tone[i] , osc, -1);
-					s->tone[i]->time[j][osc] += /*fabsf*/(fm + s->master_detune + frat + frat*pitch_env) / s->sr;
+					s->tone[i]->time[j][osc] += /*fabsf*/(fm + s->master_detune + frat + MAX(frat*pitch_env, -frat+SYN_MIN_PITCH_ENV_FREQ )) / s->sr;
 					s->tone[i]->time[j][osc] = fmodf(s->tone[i]->time[j][osc], 1);
 					if(s->tone[i]->time[j][osc]<0) s->tone[i]->time[j][osc] +=1;
 
 					a[osc] *= osc_env;
-					// a[osc] *= vel;
 
-					// accum carriers
 					oscaccum += a[osc] * vel * tone_omix(s->tone[i], osc, -1);
 				}
-				oscaccum *= s->tone[i]->gain;
-				// s->tone[i]->vupeakl = MAX(fabsf(s->tone[i]->vupeakl), oscaccum);
-				// s->tone[i]->vupeakr = MAX(fabsf(s->tone[i]->vupeakr), oscaccum);
-				osc_uvpeakl = MAX(osc_uvpeakl, fabsf(oscaccum));
-				osc_uvpeakr = MAX(osc_uvpeakr, fabsf(oscaccum));
-
-				buffer[smp] += oscaccum; smp++;
-				buffer[smp] += oscaccum; smp++;
+				s->bufl[i][(s->bufpos + smp)%s->buflen]+=oscaccum*sqrt(1.0-s->tone[i]->pan);
+				s->bufr[i][(s->bufpos + smp)%s->buflen]+=oscaccum*sqrt(    s->tone[i]->pan);
 			}
-			voice_uvpeakl += osc_uvpeakl;
-			voice_uvpeakr += osc_uvpeakr;
 		}
-		s->tone[i]->vupeakl=voice_uvpeakl;
-		s->tone[i]->vupeakr=voice_uvpeakr;
+	}
+
+	syn_mix(s, buffer, len);
+
+	s->bufpos = (s->bufpos + len) % s->buflen;
+	if(s->bufpos + len > s->buflen) s->bufpos=0;
+
+	s->sample+=len;
+
+	syn_lock(s,0);
+}
+
+
+void syn_mix(syn* s, float* buffer, int len){
+	int cs=s->filter_order;
+	float delay_bufl[len+cs];// memset(delay_bufr,0,sizeof(float)*(len+cs));
+	float delay_bufr[len+cs];// memset(delay_bufr,0,sizeof(float)*(len+cs));
+	float templ[len+cs];
+	float tempr[len+cs];
+	float dstl[len];
+	float dstr[len];
+	float convsrc[cs];
+	int di;
+	float bps=s->bpm/60.f;
+	for(int i=0; i<SYN_TONES; i++){
+		for(int p=-cs; p<len; p++){
+			di= s->bufpos - 2.0/tone_delay_time(s->tone[i], -1)/bps *s->sr;
+			// di= s->bufpos - tone_delay_time(s->tone[i], -1)*s->sr;
+			di+=p;
+			if(di<0) di+=s->buflen;
+			di%=s->buflen;
+
+			if(s->tone[i]->delay_stereo>=0){
+				delay_bufl[p+cs] = (s->bufl[i][di] * tone_delay_level(s->tone[i], -1) + s->delay_bufl[i][di] * tone_delay_fb(s->tone[i], -1));
+				delay_bufr[p+cs] = (s->bufr[i][di] * tone_delay_level(s->tone[i], -1) + s->delay_bufr[i][di] * tone_delay_fb(s->tone[i], -1));
+			} else {
+				delay_bufr[p+cs] = (s->bufl[i][di] * tone_delay_level(s->tone[i], -1) + s->delay_bufl[i][di] * tone_delay_fb(s->tone[i], -1));
+				delay_bufl[p+cs] = (s->bufr[i][di] * tone_delay_level(s->tone[i], -1) + s->delay_bufr[i][di] * tone_delay_fb(s->tone[i], -1));
+			}
+
+			if(p>=0){
+				s->delay_bufl[i][s->bufpos+p] = delay_bufl[p];
+				s->delay_bufr[i][s->bufpos+p] = delay_bufr[p];
+			}
+		}
+
+		for(int p=-cs; p<len; p++){
+			int bi = (s->bufpos+p) % s->buflen;
+			if(bi<0) bi += s->buflen;
+			templ[p+cs] = s->bufl[i][bi] + delay_bufl[p+cs];
+			tempr[p+cs] = s->bufr[i][bi] + delay_bufr[p+cs];
+		}
+
+		float freq = tone_filter_freq(s->tone[i], -1);
+		float band = tone_filter_band(s->tone[i], -1);
+
+		switch( s->tone[i]->filter_type){
+			default:
+			case 0 : fir_lp(convsrc, freq, s->sr, cs, 0); break;
+			case 1 : fir_hp(convsrc, freq, s->sr, cs, 0); break;
+			case 2 : fir_bp(convsrc, MAX(freq-band, 0), MIN(freq+band, 22000), s->sr, cs, 0); break;
+			case 3 : fir_bs(convsrc, MAX(freq-band, 0), MIN(freq+band, 22000), s->sr, cs, 0); break;
+		}
+
+		conv(dstl, convsrc, cs, templ+cs, templ, len);
+		conv(dstr, convsrc, cs, tempr+cs, tempr, len);
+
+		for(int p=0; p<len; p++){
+			s->tone[i]->vupeakl = MAX( s->tone[i]->vupeakl, fabsf(dstl[p] * s->tone[i]->gain));
+			s->tone[i]->vupeakr = MAX( s->tone[i]->vupeakr, fabsf(dstr[p] * s->tone[i]->gain));
+			buffer[p*2  ] += dstl[p] * s->tone[i]->gain;
+			buffer[p*2+1] += dstr[p] * s->tone[i]->gain;
+		}
 	}
 
 	for(int smp=0; smp<len*2;){
@@ -534,13 +630,7 @@ float voice_uvpeakr=0;
 		s->vupeakr = MAX(fabsf(buffer[smp]), s->vupeakr); smp++;
 	}
 
-	s->sample+=len;
-
-	syn_lock(s,0);
-
 }
-
-
 
 
 noteid syn_non(syn* s, int instr, float note, float vel){ // note: semitone distance from A4
@@ -855,6 +945,40 @@ float tone_pdexp(syn_tone* t, float a){assert(t);
 }
 
 
+float tone_filter_freq(syn_tone* t, float freq){
+	float ret = t->mod_mat[1][3];
+	if(freq>1) t->mod_mat[1][3] = freq;
+	return ret;
+}
+float tone_filter_band(syn_tone* t, float bw){
+	float ret = t->mod_mat[2][3];
+	if(bw>1) {
+		bw=CLAMP(bw, 100, 10000);
+		t->mod_mat[2][3] = bw;
+	}
+	return ret;
+}
+float tone_delay_time(syn_tone* t, float ti){
+	float ret = t->mod_mat[1][4];
+	if(ti>=1) t->mod_mat[1][4] = ti;
+	return ret;
+}
+float tone_delay_fb(syn_tone* t, float fb){
+	float ret = t->mod_mat[2][4];
+	if(fb>=0) t->mod_mat[2][4] = fb;
+	return ret;
+}
+float tone_delay_level(syn_tone* t, float lv){
+	float ret = t->mod_mat[3][4];
+	if(lv>=0) t->mod_mat[3][4] = lv;
+	return ret;
+}
+
+float* tone_filter_freq_addr(syn_mod_mat* m){ return &((*m)[1][3]); }
+float* tone_filter_band_addr(syn_mod_mat* m){ return &((*m)[2][3]); }
+float* tone_delay_time_addr (syn_mod_mat* m){ return &((*m)[1][4]); }
+float* tone_delay_fb_addr   (syn_mod_mat* m){ return &((*m)[2][4]); }
+float* tone_delay_level_addr(syn_mod_mat* m){ return &((*m)[3][4]); }
 
 
 
@@ -961,8 +1085,15 @@ void syn_tone_init(syn_tone* t, int sr){
 			t->time[j][k]=0;
 		}
 	}
+	tone_filter_freq(t, 22000);
+	tone_filter_band(t, 100);
+	tone_delay_time(t, 1);
+	tone_delay_fb(t, 0);
+	tone_delay_level(t, 0);
 
 	t->gain=0.75;
+	t->pan=0.5;
+	t->delay_stereo=0.0;
 
 	t->vupeakl=0;
 	t->vupeakr=0;
@@ -1007,7 +1138,8 @@ enum synt_flag{
 	SYNT_GAIN, SYNT_WAVE, SYNT_MODM, SYNT_OMIX,
 	SYNT_ATK, SYNT_DEC, SYNT_SUS, SYNT_REL,
 	SYNT_PATK, SYNT_PDEC, SYNT_PSUS, SYNT_PREL, SYNT_PAMT,
-	SYNT_OCT,
+	SYNT_OCT,  SYNT_FTYPE, SYNT_FFREQ, SYNT_FBAND, SYNT_DTIME, SYNT_DFB, SYNT_DLV,
+	SYNT_PAN, SYNT_DPAN,
 	SYNT_END=255
 };
 
@@ -1195,6 +1327,66 @@ int syn_tone_write(syn* syn, syn_tone* t, FILE* f){
 		fwrite(&value, 4, 1, f);
 	}
 
+	if(tone.filter_type != t->filter_type){
+		memset(token, 0, 4);
+		token[0] = SYNT_FTYPE;
+		token[1] = t->filter_type;
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+
+	if(tone_filter_freq(&tone,-1) != tone_filter_freq(t, -1)){
+		memset(token, 0, 4);
+		token[0] = SYNT_FFREQ;
+		value = tone_filter_freq(t, -1);
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+
+	if(tone_filter_band(&tone,-1) != tone_filter_band(t, -1)){
+		memset(token, 0, 4);
+		token[0] = SYNT_FBAND;
+		value = tone_filter_band(t, -1);
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+
+	if(tone_delay_time(&tone,-1) != tone_delay_time(t, -1)){
+		memset(token, 0, 4);
+		token[0] = SYNT_DTIME;
+		value = tone_delay_time(t, -1);
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+	if(tone_delay_fb(&tone,-1) != tone_delay_fb(t, -1)){
+		memset(token, 0, 4);
+		token[0] = SYNT_DFB;
+		value = tone_delay_fb(t, -1);
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+	if(tone_delay_level(&tone,-1) != tone_delay_level(t, -1)){
+		memset(token, 0, 4);
+		token[0] = SYNT_DLV;
+		value = tone_delay_level(t, -1);
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+	if(tone.pan != t->pan){
+		memset(token, 0, 4);
+		token[0] = SYNT_PAN;
+		value = t->pan;
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+	if(tone.delay_stereo != t->delay_stereo){
+		memset(token, 0, 4);
+		token[0] = SYNT_DPAN;
+		value = t->delay_stereo;
+		fwrite(token, 1, 4, f);
+		fwrite(&value, 4, 1, f);
+	}
+
 	memset(token, 0, 4);
 	token[0] = SYNT_END;
 	value = 0;
@@ -1279,6 +1471,15 @@ int syn_tone_read(syn* syn, syn_tone* t, void* data, int len, int* read){
 			case SYNT_PREL: tone_prel(&tone, val); break;
 			case SYNT_PAMT: tone.pitch_env_amt = val; break;
 			case SYNT_OCT: tone.oct[f0] = val; break;
+
+			case SYNT_FTYPE: tone.filter_type = f0; break;
+			case SYNT_FFREQ: tone_filter_freq(&tone, val); break;
+			case SYNT_FBAND: tone_filter_band(&tone, val); break;
+			case SYNT_DTIME: tone_delay_time(&tone, val); break;
+			case SYNT_DFB:   tone_delay_fb(&tone, val); break;
+			case SYNT_DLV:   tone_delay_level(&tone, val); break;
+			case SYNT_DPAN:  tone.delay_stereo=val; break;
+			case SYNT_PAN:   tone.pan=val; break;
 			case SYNT_END: done=1; break;
 			default: break;
 		}

@@ -18,12 +18,16 @@
 
 #define SYN_TONES 12
 #define POLYPHONY 6
-#define OSC_PER_TONE 6 /*min 3, max 255*/
+#define OSC_PER_TONE 6 /*min 5, max 255*/
 #define VEL_OUT 4
 #define ARP_LEN 32
 #define SEQ_LEN 64
 #define SEQ_STEP_PER_BEAT_DEF 4
 #define SONG_MAX 256
+#define SYN_BUFLEN_TIME 10.0 /* duration of the buffers in seconds*/
+#define SYN_MIN_PITCH_ENV_FREQ 10
+#define SYN_MIN_PITCH_ENV_AMT (-15)
+#define SYN_MIN_BPM 15
 
 typedef struct {int8_t tone, voice;} noteid;
 #define SYNLOG(...) \
@@ -39,11 +43,11 @@ typedef float syn_mod_mat[OSC_PER_TONE][OSC_PER_TONE];
 
 typedef struct {
 	float gain;
+	float pan;
 
 	int8_t voices;
 
 	int8_t osc[OSC_PER_TONE];
-
 	float pwm[OSC_PER_TONE];
 	float phase[OSC_PER_TONE];
 	float oct[OSC_PER_TONE];
@@ -56,6 +60,13 @@ typedef struct {
 	// index of modulation = modAmp/modFreq. corresponds loosely to number of audible side band pairs
 	// unused half matrix used to store osc mix, hence min osc count is 3
 	// [0][j] stores osc mix for osc>0 [1][2] for osc 0
+
+	// [1][3] stores filt freq
+	// [2][3] stores filt bandwidth
+	// [1][4] stores delay time
+	// [2][4] stores delay feedback
+	// [3][4] stores delay level
+
 
 
 	uint8_t vel[POLYPHONY];
@@ -78,9 +89,9 @@ typedef struct {
 
 	float vupeakl;
 	float vupeakr;
-	// float vupeak_maxl;
-	// float vupeak_maxr;
 
+	char filter_type;
+	float delay_stereo; // todo
 } syn_tone;
 
 #define SEQ_MIN_NOTE (-32000)
@@ -107,9 +118,16 @@ typedef struct syn{
 	int sr;
 	float master_detune;
 	SDL_mutex* mutex;
-	float* longbufl; // circular 1 second mono buffer
-	float* longbufr; // circular 1 second mono buffer
-	int longbuf_len;
+
+	// circular long buffers for effects
+	float* bufl[SYN_TONES];
+	float* bufr[SYN_TONES];
+	float* delay_bufl[SYN_TONES];
+	float* delay_bufr[SYN_TONES];
+	int buflen;
+	int bufpos;
+
+	float filter_order;
 //compressor test todo
 	float peak;
 	float threshold;
@@ -159,10 +177,11 @@ typedef struct syn{
 void syn_init(syn* s, int sr);
 void syn_quit(syn* s);
 void syn_run(syn* s, float* buffer, int len); // len: number of stereo samples to process
-void syn_lock(syn* s, char l); // 1:lock 0:unlock
+void syn_mix(syn* s, float* buffer, int len); // len: number of stereo samples to process
+void syn_lock(syn* s, char lock_on); // 1:lock 0:unlock
 void syn_song_init(syn* s);
 void syn_song_free(syn* s);
-void syn_song_advance(syn* s, float secs);
+void syn_song_advance(syn* s, float secs); // calls seq_advance
 int syn_song_pos(syn* s, int pos); // pos<0 to query, loads target position
 int syn_song_pat(syn* syn, int pos, int pat); // pat<0 to query, assigns a pattern to a position
 int syn_song_dur(syn* syn, int pos, int dur); // dur<0 to query
@@ -190,6 +209,20 @@ float tone_frat(syn_tone* t, int osc, float freq_ratio); // <0 to avoid setting
 float tone_index(syn_tone* t, int carrier, int modulator, float fm_index); // <0 to avoid setting; carrier > modulator
 float tone_omix(syn_tone* t, int osc, float mix); // <0 to avoid setting
 float syn_oct_mul(float oct_val); // gets the frequency multiplier from the tone octave value
+
+float  tone_filter_freq(syn_tone*, float freq);
+float* tone_filter_freq_addr(syn_mod_mat*);
+float  tone_filter_band(syn_tone*, float bw);
+float* tone_filter_band_addr(syn_mod_mat*);
+float  tone_delay_time(syn_tone*, float t);
+float* tone_delay_time_addr(syn_mod_mat*);
+float  tone_delay_level(syn_tone*, float level);
+float* tone_delay_level_addr(syn_mod_mat*);
+float  tone_delay_fb(syn_tone*, float fb);
+float* tone_delay_fb_addr(syn_mod_mat*);
+float  tone_delay_stereo(syn_tone*, float pan); // pan in [-1,1] to set
+
+
 // osc amp env adsr
 float tone_atk(syn_tone* t, int osc, float a); // a<0 to avoid setting
 float tone_dec(syn_tone* t, int osc, float d); // d<0 to avoid setting

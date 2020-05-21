@@ -24,8 +24,6 @@ float lerp(float a, float b, float c);
 #define MAPVAL(x, a,b, c,d) \
 	( (((x) - (a)) / ((b) - (a))) * ((d) - (c)) + (c) )
 #endif
-// #define SINE_TABLE_SIZE 48000
-// #define SINE_TABLE_SIZE 2048
 
 void smath_init(void);
 
@@ -42,5 +40,25 @@ float wnoiz(float t);
 float noise(void);
 float db2vol(float db);
 float vol2db(float vol);
+
+
+void conv(float* dst, float* kernel, int cs, float* src, float* prevsrc, int n );
+/*
+creates FIR low pass convolution filter of order n to be stored in dst
+which should be able to hold n float values
+*/
+enum swindow{ W_BLACKMAN=0,W_HANNING=1, W_HAMMING=2};
+void fir_lp(float* dst, float freq, float sr, int n, char window);
+void fir_hp(float* dst, float freq, float sr, int n, char window);
+void fir_bp(float* dst, float fl, float fh, float sr, int n, char window);
+void fir_bs(float* dst, float fl, float fh, float sr, int n, char window);
+
+void butterworth5(float* dst, float freq, float reso, int sr, char highpass);
+
+void genSinc(float* dst, float freq, int n);
+void wBlackman(float* w, int n);
+void wHanning(float* w, int n);
+void wHamming(float* w, int n);
+
 
 #endif

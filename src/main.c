@@ -71,9 +71,7 @@ void sg_drawperim( sg_rect rect );
 void sg_show(void);
 void sg_clear(void);
 
-
 // returns an identifier valid until sg_quit is called
-// typedef union{struct{uint8_t r,g,b,a;}; uint32_t c;} rgba8;
 typedef union{struct{uint8_t a,b,g,r;}; uint32_t c;} rgba8;
 int16_t sg_addtex( rgba8* pixels, int w, int h );
 int16_t sg_addtext( char* text );
@@ -85,11 +83,10 @@ void sg_clear_area(int x, int y, int w, int h);
 void sg_target(SDL_Texture*);
 
 char ptbox( int x, int y, sg_rect r); // point-box collision check
-int isel(int i); // select active instrument
-void astep(int step); // select active step
 /* -------------------------------------------------------------------------- */
 
-/* -------------------------------------------------------------------------- */
+int isel(int i); // select active instrument
+void astep(int step); // select active step
 
 void key_update(int key, char on);
 
@@ -120,7 +117,7 @@ struct {
 	static inline size_t auformat_size( SDL_AudioFormat format){ return SDL_AUDIO_BITSIZE(format)/8; }
 	int sample_rate = 48000;
 	// int sample_rate = 44100;
-	int samples_size = 256;
+	int samples_size = 128;
 #else
 	static inline size_t auformat_size( Uint16 format){ return 2; } // AUDIO_S16SYS
 	int sample_rate = 22050;
@@ -136,7 +133,7 @@ noteid voices[MAX_KEYS];
 
 float testpitch=0;
 float testvelocity=1;
-int sample=0;
+
 
 float prevl=0;
 float prevr=0;
@@ -161,12 +158,6 @@ char seq_mode = 0;
 
 
 
-int getlongbuf_index(int i){
-	int index = (i + sample-G.auhave.samples)% longbuf_len;
-	if(index<0) index = index+longbuf_len;
-	if(index<0 || index>=longbuf_len) SDL_Log("wrong index %i %i:%s\n", index, __LINE__, __func__);
-	return index;
-}
 
 
 
@@ -191,36 +182,12 @@ void maincb(void* userdata, uint8_t* stream, int length){
 	memset(buffer, 0, sizeof(buffer));
 	memset(stream, 0, length);
 	short* out=(short*)stream;
-	// float* out=(float*)stream;
 
 	syn_run(userdata, buffer, smp/2);
 
-	int totsmp = ((float)length) / auformat_size(G.auhave.format);
-
-	sample+=totsmp/2;
-	// float dtime = .1;
-	// float dfeedb = .7;
-
-	// prevr = s[--i];
-	// prevl = s[--i];
-
 	int i=0;
-	while(i<totsmp){
-		longbufl[getlongbuf_index(floor(i/2))]=buffer[i]; i++;
-		longbufr[getlongbuf_index(floor(i/2))]=buffer[i]; i++;
-
-		//delay
-		// i-=2;
-		// longbufl[getlongbuf_index(floor(i/2))] += /*(2<<14) **/ longbufl[getlongbuf_index(i/2-dtime*G.auhave.freq)]*dfeedb;i++;
-		// longbufr[getlongbuf_index(floor(i/2))] += /*(2<<14) **/ longbufr[getlongbuf_index(i/2-dtime*G.auhave.freq)]*dfeedb;i++;
-		// longbufl[i]+=longbufl[(int)fmodf(i/2-1000,2000)]*dfeedb;i++;
-		// longbufr[i]+=longbufr[(int)fmodf(i/2-1000,2000)]*dfeedb;i++;
-	}
-
-	i=0;
-	while(i < totsmp){ // output
-		out[i] = (signed short)(CLAMP(longbufl[getlongbuf_index(floor(i/2))], -1, 1) * (2<<14)); i++;
-		out[i] = (signed short)(CLAMP(longbufr[getlongbuf_index(floor(i/2))], -1, 1) * (2<<14)); i++;
+	while(i < smp){ // output
+		out[i] = (signed short)(CLAMP(buffer[i], -1, 1) * (2<<14)); i++;
 	}
 }
 
@@ -309,6 +276,7 @@ void gui_quit_dialog(void);
 
 int init_systems(void){
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"); // linear filtering
+	// SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0"); // nearest filtering
 
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	#ifdef ANDROID
@@ -421,16 +389,7 @@ void gui_quit(void);
 int main(int argc, char**argv){ (void)argv, (void)argc;
 	memset(&G, 0, sizeof(G));
 	G.syn = malloc( sizeof (syn) );
-	memset( G.syn, 0, sizeof(syn) );
-
-
-
-	if(!longbufl || !longbufr){
-		longbufl=malloc(sizeof(float)*longbuf_len);
-		longbufr=malloc(sizeof(float)*longbuf_len);
-		memset(longbufl, 0, sizeof(float)*longbuf_len);
-		memset(longbufr, 0, sizeof(float)*longbuf_len);
-	}
+	// memset( G.syn, 0, sizeof(syn) );
 
 	syn_init(G.syn, sample_rate);
 	if(!voices_inited) init_voices();
@@ -466,8 +425,6 @@ if(SDL_IsTextInputActive()) SDL_StopTextInput();
 
 		#endif
 
-		if(longbufl) free(longbufl);
-		if(longbufr) free(longbufr);
 		SDL_Quit();
 		syn_quit(G.syn);
 		free(G.syn);
@@ -611,7 +568,7 @@ int16_t knob_tex;
 int16_t modm_tex;
 int16_t label_tex[SYN_TONES][10];
 int16_t wave_tex[OSC_MAX];
-char wave_text[OSC_MAX][10]={
+char wave_text[OSC_MAX][5]={
 	{"sine"},
 	{"tri "},
 	{"nois"},
@@ -619,6 +576,7 @@ char wave_text[OSC_MAX][10]={
 	{"puls"},
 	{"saw "}
 };
+int16_t filtt_tex[4];
 int16_t seq_step_tex;
 
 int16_t rec_tex;
@@ -626,6 +584,7 @@ int16_t rec_tex;
 int16_t step_bar_tex[SEQ_LEN+1];
 int16_t Cn_tex[MAX_OCTAVE];
 
+#define KNOB_BG 0x35353535
 #ifndef __vita__
 #define knob_size 13
 #else
@@ -639,6 +598,7 @@ float mlatch_factor = 0.0; // mouse delta is multiplied by this
 float mlatch_max = 0.0; // mlatch get's clamped to these
 float mlatch_min = 0.0;
 char mlatch_v=0; // use vertical delta
+char mlatch_exp=0; // grows exponentially
 signed char mlatch_adsr=-1; // call adsr updaters
 char mlatch_adsr_osc=0;
 char mlatch_adsr_pitch=0; // set to 1 if latched to pitch envelope
@@ -726,18 +686,21 @@ void gui_init(void){
 			if(r<=knob_size/2 + 1) // extra bit of black
 				knob_pixels[i*knob_size+j].c = 0x000000FF;
 
-			if(((y)==0) && (x>0)) // line
+			if(((y)==0) && (x>=0)) // line
 				knob_pixels[i*knob_size+j].c = 0xFFFFFFFF;
 
 			else if(r<knob_size/2-1) // background
-				knob_pixels[i*knob_size+j].c = 0x22222222;
+				knob_pixels[i*knob_size+j].c = KNOB_BG;
 
 			if(r>knob_size/2-knob_thickness && r<knob_size/2 ) // circle
 				knob_pixels[i*knob_size+j].c = 0xFFFFFFFF;
 
 		}
 	}
-
+	filtt_tex[0]=sg_addtext("LP");
+	filtt_tex[1]=sg_addtext("HP");
+	filtt_tex[2]=sg_addtext("BP");
+	filtt_tex[3]=sg_addtext("BS");
 // int16_t step_bar_tex[SEQ_LEN];
 // int16_t Cn_tex[MAX_OCTAVE];
 	char tex_text[8]; memset(tex_text, 0, sizeof(tex_text));
@@ -945,7 +908,6 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 			}
 			break;
 
-#ifndef _3DS
 		case SDL_WINDOWEVENT:
 			switch(e.window.event){
 				case SDL_WINDOWEVENT_SIZE_CHANGED:
@@ -1000,8 +962,7 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 				gup_song=1;
 				break;
 			}
-#endif
-#ifndef _3DS
+
 		case SDL_KEYDOWN:
 			if(!SDL_IsTextInputActive()){
 				if(e.key.repeat && gui_view!=2) break;
@@ -1205,15 +1166,8 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 				default:break;
 			}
 			break;
-#endif // _3DS
 
 
-#if defined (_3DS) //_3DS
-	case SDL_KEYUP:
-		if(e.key.keysym.sym==SDLK_RETURN) running=0;
-		if(e.key.keysym.sym==SDLK_a) syn_pause(G.syn);
-		break;
-#endif // _3DS
 
 		case SDL_JOYAXISMOTION:
 		case SDL_JOYBUTTONDOWN:
@@ -1221,19 +1175,6 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 			break;
 		case SDL_JOYBUTTONUP:
 			break;
-
-
-	#ifndef _3DS
-		// case SDL_FINGERDOWN:
-		// 	voices[5][13+12+1]=syn_non(G.syn, 5, 3 -12+12*octave, testvelocity);
-
-		// case SDL_FINGERMOTION:
-
-		// case SDL_FINGERUP:
-		// 	syn_nof(G.syn, voices[5][13+12+1]);
-
-		// 	break;
-#endif // _3DS
 
 	//mouse
 		case SDL_MOUSEMOTION:
@@ -1246,15 +1187,23 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 			if(mlatch>(float*)100){
 				gup_mlatch=1;
 				char shift = kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT);
-				char ctrl  = kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL);
+				char ctrl  = kbget(SDLK_LCTRL)  || kbget(SDLK_RCTRL);
 				float lmdx=Mouse.dx;
 				float lmdy=Mouse.dy;
 				if(ctrl){
 					lmdx = lmdx/BASE_SCREEN_WIDTH * screen_width;
 					lmdy = lmdy/BASE_SCREEN_HEIGHT * screen_height;
 				}
-				if(mlatch_v) *mlatch = CLAMP(*mlatch - lmdy * (shift?mlatch_factor/10.0:mlatch_factor), mlatch_min, mlatch_max);
-				else         *mlatch = CLAMP(*mlatch + lmdx * (shift?mlatch_factor/10.0:mlatch_factor), mlatch_min, mlatch_max);
+				if(!mlatch_exp){
+					if(mlatch_v) *mlatch = CLAMP(*mlatch - lmdy * (shift?mlatch_factor/10.0:mlatch_factor), mlatch_min, mlatch_max);
+					else         *mlatch = CLAMP(*mlatch + lmdx * (shift?mlatch_factor/10.0:mlatch_factor), mlatch_min, mlatch_max);
+				} else {
+					float b = log (mlatch_max / mlatch_min) / (mlatch_max - mlatch_min);
+					float x = log(*mlatch);
+					float a = *mlatch / exp(b*x);
+					if(mlatch_v) *mlatch = CLAMP(a*exp(b*x - lmdy*(shift?mlatch_factor/10.0:mlatch_factor)), mlatch_min, mlatch_max);
+					else         *mlatch = CLAMP(a*exp(b*x + lmdx*(shift?mlatch_factor/10.0:mlatch_factor)), mlatch_min, mlatch_max);
+				}
 
 				if(Mouse.b1) *mlatch = round(*mlatch);
 
@@ -1308,6 +1257,7 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 				mlatch=NULL;
 				mlatch_adsr=-1;
 				mlatch_adsr_pitch=0;
+				mlatch_exp=0;
 			}
 			break;
 
@@ -1325,7 +1275,7 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 			/* Add new text onto the end of our text */
 			if(strnlen(song_name, SONG_NAME_MAX-1) + strlen(e.text.text) >= SONG_NAME_MAX-1 )
 				break;
-			// strcat(song_name, e.text.text);
+
 			if(song_name_cursor < (int)strnlen(song_name, SONG_NAME_MAX-1)){
 				memmove(song_name+song_name_cursor+strlen(e.text.text), song_name+song_name_cursor, strnlen(song_name+song_name_cursor, SONG_NAME_MAX-1-song_name_cursor));
 				for(int i = 0; i < (int)strlen(e.text.text); i++)
@@ -1336,15 +1286,8 @@ int sdl_event_watcher(void* udata, SDL_Event* event){ (void) udata;
 			gup_song_name=1;
 			break;
 		case SDL_TEXTEDITING:
-			/*
-			Update the composition text.
-			Update the cursor position.
-			Update the selection length (if any).
-			*/
-			// composition = event.edit.text;
 			song_name_cursor = e.edit.start;
 			gup_song_name=1;
-			// selection_len = event.edit.length;
 		break;
 
 		default: break;
@@ -2147,7 +2090,8 @@ void gui_toneview(void){
 	th=MAX(th, knob_size+1);
 	if(Mouse.b0 && !mlatch){
 		for(int i = 0; i<OSC_PER_TONE; i++){
-			sg_rect r = {0, gosc_basey+i*th, tw, th, 0,0,0,0, 0,0};
+			sg_rect r = {0, gosc_basey+i*th, tw, th-2, 0,0,0,0, 0,0};
+			// sg_rect r = {0, gosc_basey+i*(knob_size+1)+2, tw, th, 0,0,0,0, 0,0};
 			if( ptboxe(Mouse.px, Mouse.py, r) ){
 				Mouse.b0=0;
 				if(Mouse.px < tw/2) {G.syn->tone[_isel]->osc[i] = MAX(G.syn->tone[_isel]->osc[i]-1, 0); gup_osc=1;}
@@ -2288,6 +2232,216 @@ void gui_toneview(void){
 		else
 			sg_drawtex(knob_tex, r.x, r.y, *syn_modm_addr(G.syn->seq[_isel]->modm[step_sel], i, -1)*300, 155,155,255,255);
 	}
+
+
+// filter base
+int filt_gridx = 3;
+int filt_gridy = 0;
+	{
+		sg_rect r={filt_gridx*(knob_size+1)+modm_basex, filt_gridy*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = tone_filter_freq_addr( &G.syn->tone[_isel]->mod_mat);
+			mlatch_min=2;
+			mlatch_max=22000.0;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			mlatch_exp=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, tone_filter_freq(G.syn->tone[_isel], -1)/20000 *315 , 255,255,155,255);
+	}
+	{ // filter band
+		sg_rect r={filt_gridx*(knob_size+1)+modm_basex, (filt_gridy+1)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = tone_filter_band_addr( &G.syn->tone[_isel]->mod_mat);
+			mlatch_min=100;
+			mlatch_max=10000.0;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			mlatch_exp=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, tone_filter_band(G.syn->tone[_isel], -1)/10000 *315 , 255,155,155,255);
+	}
+	{ // delay time
+		sg_rect r={(filt_gridx+1)*(knob_size+1)+modm_basex, (filt_gridy)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = tone_delay_time_addr( &G.syn->tone[_isel]->mod_mat);
+			mlatch_min=1;
+			mlatch_max=32.0;
+			mlatch_factor=.5;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, (tone_delay_time(G.syn->tone[_isel], -1)-1)/31 *315 , 155,155,255,255);
+	}
+	{ // delay fb
+		sg_rect r={(filt_gridx+1)*(knob_size+1)+modm_basex, (filt_gridy+1)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = tone_delay_fb_addr( &G.syn->tone[_isel]->mod_mat);
+			mlatch_min=0;
+			mlatch_max=1;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, tone_delay_fb(G.syn->tone[_isel], -1) *315 , 255,155,255,255);
+	}
+	{ // delay level
+		sg_rect r={(filt_gridx+1)*(knob_size+1)+modm_basex, (filt_gridy+2)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = tone_delay_level_addr( &G.syn->tone[_isel]->mod_mat);
+			mlatch_min=0;
+			mlatch_max=1;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, tone_delay_level(G.syn->tone[_isel], -1)*315 , 255,155,155,255);
+	}
+
+
+// filter delay targets
+	{ // filter base
+		sg_rect r={filt_gridx*(knob_size+1)+modm_target_basex, filt_gridy*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			if(G.syn->seq[_isel]->modm[step_sel]==NULL){
+				seq_modm(G.syn->seq[_isel], &(G.syn->tone[_isel]->mod_mat), step_sel);
+				gup_seq=1;
+			}
+			mlatch = tone_filter_freq_addr( G.syn->seq[_isel]->modm[step_sel] );
+			mlatch_min=2;
+			mlatch_max=22000.0;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			mlatch_exp=1;
+			gup_mlatch=1;
+		}
+		if(G.syn->seq[_isel]->modm[step_sel]==NULL)
+			sg_drawtex(knob_tex, r.x, r.y, tone_filter_freq(G.syn->tone[_isel], -1)/20000*315 , 55,55,55,255);
+		else
+			sg_drawtex(knob_tex, r.x, r.y, *tone_filter_freq_addr( G.syn->seq[_isel]->modm[step_sel] )/20000 *315 , 255,255,155,255);
+	}
+	{ // filter band
+		sg_rect r={filt_gridx*(knob_size+1)+modm_target_basex, (filt_gridy+1)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			if(G.syn->seq[_isel]->modm[step_sel]==NULL){
+				seq_modm(G.syn->seq[_isel], &(G.syn->tone[_isel]->mod_mat), step_sel);
+				gup_seq=1;
+			}
+			mlatch = tone_filter_band_addr( G.syn->seq[_isel]->modm[step_sel]);
+			mlatch_min=100;
+			mlatch_max=10000.0;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			mlatch_exp=1;
+			gup_mlatch=1;
+		}
+		if(G.syn->seq[_isel]->modm[step_sel]==NULL)
+			sg_drawtex(knob_tex, r.x, r.y, tone_filter_band(G.syn->tone[_isel], -1)/10000*315 , 55,55,55,255);
+		else
+			sg_drawtex(knob_tex, r.x, r.y, *tone_filter_band_addr( G.syn->seq[_isel]->modm[step_sel])/20000 *315 , 255,155,155,255);
+	}
+	{ // delay time
+		sg_rect r={(filt_gridx+1)*(knob_size+1)+modm_target_basex, (filt_gridy)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			if(G.syn->seq[_isel]->modm[step_sel]==NULL){
+				seq_modm(G.syn->seq[_isel], &(G.syn->tone[_isel]->mod_mat), step_sel);
+				gup_seq=1;
+			}
+			mlatch = tone_delay_time_addr( G.syn->seq[_isel]->modm[step_sel]);
+			mlatch_min=1;
+			mlatch_max=32.0;
+			mlatch_factor=.5;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		if(G.syn->seq[_isel]->modm[step_sel]==NULL)
+			sg_drawtex(knob_tex, r.x, r.y, (tone_delay_time(G.syn->tone[_isel], -1)-1)/31*315 , 55,55,55,255);
+		else
+			sg_drawtex(knob_tex, r.x, r.y, (*tone_delay_time_addr( G.syn->seq[_isel]->modm[step_sel])-1)/31 *315 , 155,155,255,255);
+	}
+	{ // delay fb
+		sg_rect r={(filt_gridx+1)*(knob_size+1)+modm_target_basex, (filt_gridy+1)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			if(G.syn->seq[_isel]->modm[step_sel]==NULL){
+				seq_modm(G.syn->seq[_isel], &(G.syn->tone[_isel]->mod_mat), step_sel);
+				gup_seq=1;
+			}
+			mlatch = tone_delay_fb_addr( G.syn->seq[_isel]->modm[step_sel]);
+			mlatch_min=0;
+			mlatch_max=1;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		if(G.syn->seq[_isel]->modm[step_sel]==NULL)
+			sg_drawtex(knob_tex, r.x, r.y, tone_delay_fb(G.syn->tone[_isel], -1)*315 , 55,55,55,255);
+		else
+			sg_drawtex(knob_tex, r.x, r.y, *tone_delay_fb_addr( G.syn->seq[_isel]->modm[step_sel]) *315 , 255,155,255,255);
+	}
+	{ // delay level
+		sg_rect r={(filt_gridx+1)*(knob_size+1)+modm_target_basex, (filt_gridy+2)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			if(G.syn->seq[_isel]->modm[step_sel]==NULL){
+				seq_modm(G.syn->seq[_isel], &(G.syn->tone[_isel]->mod_mat), step_sel);
+				gup_seq=1;
+			}
+			mlatch = tone_delay_level_addr( G.syn->seq[_isel]->modm[step_sel]);
+			mlatch_min=0;
+			mlatch_max=1;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		if(G.syn->seq[_isel]->modm[step_sel]==NULL)
+			sg_drawtex(knob_tex, r.x, r.y, tone_delay_level(G.syn->tone[_isel], -1)*315 , 55,55,55,255);
+		else
+			sg_drawtex(knob_tex, r.x, r.y, *tone_delay_level_addr( G.syn->seq[_isel]->modm[step_sel])*315 , 255,155,155,255);
+	}
+
+// filter types
+	{
+		sg_rect r={0, (filt_gridy+6)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		sg_drawtext(filtt_tex[0], r.x, r.y, 0, G.syn->tone[_isel]->filter_type==0?255:55,55,55,255);
+		if(Mouse.b0 && !mlatch && ptbox(Mouse.px, Mouse.py, r)) G.syn->tone[_isel]->filter_type=0;
+		r.x+=16;
+		sg_drawtext(filtt_tex[1], r.x, r.y, 0, G.syn->tone[_isel]->filter_type==1?255:55,55,55,255);
+		if(Mouse.b0 && !mlatch && ptbox(Mouse.px, Mouse.py, r)) G.syn->tone[_isel]->filter_type=1;
+		r.x+=16;
+		sg_drawtext(filtt_tex[2], r.x, r.y, 0, G.syn->tone[_isel]->filter_type==2?255:55,55,55,255);
+		if(Mouse.b0 && !mlatch && ptbox(Mouse.px, Mouse.py, r)) G.syn->tone[_isel]->filter_type=2;
+		r.x+=16;
+		sg_drawtext(filtt_tex[3], r.x, r.y, 0, G.syn->tone[_isel]->filter_type==3?255:55,55,55,255);
+		if(Mouse.b0 && !mlatch && ptbox(Mouse.px, Mouse.py, r)) G.syn->tone[_isel]->filter_type=3;
+	}
+
+	{ // pan
+		sg_rect r={(filt_gridx)*(knob_size+1)+modm_basex, (filt_gridy+OSC_PER_TONE)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = &G.syn->tone[_isel]->pan;
+			mlatch_min=0;
+			mlatch_max=1;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel]->pan*270+45 , 255,255,155,255);
+	}
+	{ // delay pan
+		sg_rect r={(filt_gridx+1)*(knob_size+1)+modm_basex, (filt_gridy+OSC_PER_TONE)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
+		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
+			mlatch = &G.syn->tone[_isel]->delay_stereo;
+			mlatch_min=-1;
+			mlatch_max=1;
+			mlatch_factor=.05;
+			mlatch_v=1;
+			gup_mlatch=1;
+		}
+		sg_drawtex(knob_tex, r.x, r.y, MAPVAL(G.syn->tone[_isel]->delay_stereo,-1,1,0,1)*270+45 , 155,155,255,255);
+	}
+
+
 	// tone gain
 	int gain_basex = modm_target_basex + (knob_size+1)*(OSC_PER_TONE)+knob_size+1 +knob_size/2;
 	{
@@ -2332,13 +2486,14 @@ void gui_toneview(void){
 		sg_rect r={penv_adsr_basex, (5)*(knob_size+1)+gosc_basey-2, knob_size+1, knob_size+1, 0,0,0,0, 0,0};
 		if(!mlatch && Mouse.b0 && ptbox(Mouse.px, Mouse.py, r)){
 			mlatch=&G.syn->tone[_isel]->pitch_env_amt;
-			mlatch_min=0.0;
-			mlatch_max= 15;
+			mlatch_min= SYN_MIN_PITCH_ENV_AMT;
+			mlatch_max= -SYN_MIN_PITCH_ENV_AMT;
 			mlatch_factor= 0.05;
 			mlatch_v=1;
 			mlatch_adsr_pitch=1;
 		}
-		sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel]->pitch_env_amt * 310/15, 255,255,155,255);
+		// sg_drawtex(knob_tex, r.x, r.y, G.syn->tone[_isel]->pitch_env_amt * 310/15, 255,255,155,255);
+		sg_drawtex(knob_tex, r.x, r.y, MAPVAL(G.syn->tone[_isel]->pitch_env_amt,SYN_MIN_PITCH_ENV_AMT,-SYN_MIN_PITCH_ENV_AMT,10,350), 255,255,155,255);
 	}
 	// virtual keyboard
 	int vkb_h = 32;
@@ -2976,7 +3131,6 @@ void gui_patternview(void){
 	int vkb_w = 20;
 	int vkb_basey = 16;
 	int vkb_keys = 12*1+1;
-	int vkb_endx = 0;
 	int vkb_endy = 0;
 	if(!save_requested)
 	if(gup_vkb || Mouse.py <= vkb_basey){
