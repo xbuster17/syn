@@ -608,8 +608,8 @@ void syn_mix(syn* s, float* buffer, int len){
 			default:
 			case 0 : fir_lp(convsrc, freq, s->sr, cs, 0); break;
 			case 1 : fir_hp(convsrc, freq, s->sr, cs, 0); break;
-			case 2 : fir_bp(convsrc, MAX(freq-band, 0), MIN(freq+band, 22000), s->sr, cs, 0); break;
-			case 3 : fir_bs(convsrc, MAX(freq-band, 0), MIN(freq+band, 22000), s->sr, cs, 0); break;
+			case 2 : fir_bp(convsrc, MAX(freq-band, 2), MIN(freq+band, 22000), s->sr, cs, 0); break;
+			case 3 : fir_bs(convsrc, MAX(freq-band, 2), MIN(freq+band, 22000), s->sr, cs, 0); break;
 		}
 
 		conv(dstl, convsrc, cs, templ+cs, templ, len);
@@ -1634,8 +1634,8 @@ int syn_seq_write(syn* syn, syn_seq* seq, FILE* f){
 				memset(token, 0, 4);
 				token[0] = SYNP_NOTE;
 				token[1] = step;
-				token[2] = seq->vel[voice][step]*255;
-				token[3] = seq->dur[voice][step]*255;
+				token[2] = seq->vel[voice][step];
+				token[3] = seq->dur[voice][step];
 				value = seq->note[voice][step];
 				fwrite(token, 1, 4, f);
 				fwrite(&value, 4, 1, f);
@@ -1698,7 +1698,7 @@ int syn_seq_read(syn* syn, syn_seq* seq, void* data, int len, int*read){
 			case SYNP_SPB: seq->spb=val; break;
 			case SYNP_MUTE: seq->mute=1; break;
 			case SYNP_NOTE:
-				if(seq_non( seq, f0, val, f1, f2)) SYNLOG("warrning seq read too many voices");
+				if(seq_non( seq, f0, val, f1/255.f, f2/255.f)) SYNLOG("warrning seq read too many voices");
 				break;
 			case SYNP_TONE:
 				// if(seq->tone != NULL){ printf("warrning seq read multiple tones\n"); free(seq->tone); }
