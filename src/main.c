@@ -812,7 +812,17 @@ void main_loop(void){
 					sg_target(G.pattern_view_tex);
 					gup_step_bar=1;
 					gup_note_grid=1;
-					rec=0;
+					// update collumn display
+					for(int i = 0 ; i<SYN_TONES; i++){
+						for(int j = 0 ; j<SEQ_LEN; j++){
+							char notes_on=0;
+							for(int v = 0 ; v<POLYPHONY; v++){
+								notes_on+=seq_ison(G.syn->seq[i], j, v );
+							}
+							note_cols[i][j]+= notes_on;
+						}
+					}
+					// rec=0;
 					break;
 				default:break;
 			}
@@ -827,10 +837,35 @@ void main_loop(void){
 			gup_lib=1;
 		}
 
+		if(kbget(SDLK_RETURN) && gui_view!=2 ){ kbset(SDLK_RETURN,0);
+			if(G.syn->seq_play) syn_stop(G.syn);
+			else syn_pause(G.syn);
+		}
+
+		if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_a)){ kbset(SDLK_a,0);
+			G.syn->song_advance = !G.syn->song_advance;
+		}
+		if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_r)){ kbset(SDLK_r,0);
+			rec=!rec;
+			gup_rec=1;
+		}
+		if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_f)){ kbset(SDLK_f,0);
+			follow=!follow;
+		}
+
+		if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && (kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) && kbget(SDLK_l)){
+			kbset(SDLK_l,0);
+			gup_song=1;
+			G.syn->song_loop = !G.syn->song_loop;
+		}
 
 		frame++;
 		pbeat = beat;
 		pstep = step;
+			//active step
+		step=G.syn->seq[_isel]->step;
+		if(follow) astep(step);
+
 		sg_show();
 
 
@@ -1799,6 +1834,7 @@ void astep(int step){
 			*mlatch = prev_val;
 		}
 	}
+	gup_step_bar=1;
 }
 
 
@@ -1876,8 +1912,9 @@ void key_update(int key, char on){
 		gup_seq=1;
 		gup_shown_notes=1;
 		gup_step_bar=1;
-	}
+		gup_note_grid=1;
 
+	}
 	syn_lock(G.syn, 0);
 
 }
@@ -2075,9 +2112,9 @@ void gui_toneview(void){
 	}
 
 
-	//active step
-	int step=G.syn->seq[_isel]->step;
-	if(follow) astep(step);
+	// //active step
+	// int step=G.syn->seq[_isel]->step;
+	// if(follow) astep(step);
 
 	sg_clear_area(0, gseq_basey+gseqh, BASE_SCREEN_WIDTH, 8);
 	sg_drawtex(seq_step_tex, (float)(BASE_SCREEN_WIDTH)/SEQ_LEN*step+1, gseq_basey+gseqh, 0, 255,255,255,255);
@@ -2937,26 +2974,7 @@ int filt_gridy = 0;
 	gui_quit_dialog();
 	gui_save_dialog();
 
-	if(kbget(SDLK_RETURN)){ kbset(SDLK_RETURN,0);
-		if(G.syn->seq_play) syn_stop(G.syn);
-		else syn_pause(G.syn);
-	}
-	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_a)){ kbset(SDLK_a,0);
-		G.syn->song_advance = !G.syn->song_advance;
-	}
-	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_r)){ kbset(SDLK_r,0);
-		rec=!rec;
-		gup_rec=1;
-	}
-	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_f)){ kbset(SDLK_f,0);
-		follow=!follow;
-	}
 
-	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && (kbget(SDLK_LSHIFT) || kbget(SDLK_RSHIFT)) && kbget(SDLK_l)){
-		kbset(SDLK_l,0);
-		gup_song=1;
-		G.syn->song_loop = !G.syn->song_loop;
-	}
 
 	// copy/paste
 	if((kbget(SDLK_LCTRL) || kbget(SDLK_RCTRL)) && kbget(SDLK_c)){ kbset(SDLK_c,0);
@@ -3202,6 +3220,7 @@ void gui_patternview(void){
 		if((Mouse.b0||Mouse.b1|| Mouse.dx!=0 || Mouse.dy!=0) && ptbox(Mouse.px, Mouse.py, r))
 			gup_note_grid=1;
 	}
+
 	if(!save_requested && gup_note_grid){
 		gup_note_grid=0;
 		int ng_basex = vkb_w-1;
@@ -3257,7 +3276,7 @@ void gui_patternview(void){
 		}
 	}
 
-	// step bar
+	// step bar / hbar
 	if(gup_step_bar || Mouse.b0 || mlatch==phony_latch_scrollh) {
 		int ng_px = note_grid_size_x;
 
@@ -3266,20 +3285,36 @@ void gui_patternview(void){
 		note_scrollh_vel*=.9;
 		if(fabsf(note_scrollh_vel)<0.01) { gup_step_bar=0;}
 
-		sg_rect r = {vkb_w, 0, BASE_SCREEN_WIDTH-vkb_w-11-2, 16, 0,0,0,255, 0,0};
+		// scroll step
+		sg_rect r = {vkb_w, 0, BASE_SCREEN_WIDTH-vkb_w-11-2, 8, 0,0,0,255, 0,0};
 		if(mlatch==phony_latch_scrollh || (Mouse.b0 && ptboxe(Mouse.px, Mouse.py, r))){
 			gup_step_bar=1;
 			mlatch=phony_latch_scrollh;
 			note_scrollh_vel-=((float)Mouse.sdx)/screen_width*ng_px/4;
 			if(Mouse.sdx*Mouse.sdx == 0) note_scrollh_vel=0;
 		}
+
+		// active step
+		sg_rect ra = {vkb_w, 8, BASE_SCREEN_WIDTH-vkb_w-11-2, 8, 0,0,0,255, 0,0};
+		if((Mouse.b0 && ptboxe(Mouse.px, Mouse.py, ra))){
+			// gup_step_bar=1;
+			astep( MAPVAL(Mouse.px, vkb_w, BASE_SCREEN_WIDTH-vkb_w-11-2, 0, 15) + note_scrollh );
+			// mlatch=phony_latch_scrollh;
+			// note_scrollh_vel-=((float)Mouse.sdx)/screen_width*ng_px/4;
+			// if(Mouse.sdx*Mouse.sdx == 0) note_scrollh_vel=0;
+		}
+
 		note_scrollh = note_scrollh_pos;
 		// note_scrollh = CLAMP(note_scrollh, 0, SEQ_LEN-16);
 		if(gup_step_bar)gup_shown_notes=1;
 		if(gup_step_bar)gup_note_grid=1;
 
 		sg_clear_area(r.x, r.y, r.w, r.h);
+		sg_clear_area(ra.x, ra.y, ra.w, ra.h);
 		for(int i=0; i<16; i++){
+			if(step_sel == i + note_scrollh )
+				sg_drawtext( step_bar_tex[i+note_scrollh], r.x, r.y+8, 0, 255, 255, 55, 255 );
+
 			if(G.syn->seq[_isel]->step == i+note_scrollh)
 				sg_drawtext( step_bar_tex[i+note_scrollh], r.x, r.y, 0, 255, 255, 55, 255 );
 			else if(G.syn->seq[_isel]->len <= i+note_scrollh)
@@ -3337,13 +3372,35 @@ void gui_patternview(void){
 		kb_octave( kb_octave(-1) -1);
 	}
 
+	if (kbget(SDLK_LEFT )){ follow=0;
+		key_delay++;
+		if(key_delay==0){ key_delay=-6;
+			if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+				G.syn->seq[_isel]->len=MAX(G.syn->seq[_isel]->len-1, 1)      ;gup_seq=1;}
+			else astep( step_sel-1);
+			gup_step_bar=1;
+			if(step_sel<note_scrollh) note_scrollh_pos--;
+			if(step_sel>note_scrollh+15) note_scrollh_pos = step_sel-15;
+		}
+	}
+	if (kbget(SDLK_RIGHT)){ follow=0;
+		key_delay++;
+		if(key_delay==0){ key_delay=-6;
+			if(kbget(SDLK_RCTRL)||kbget(SDLK_LCTRL)){
+				G.syn->seq[_isel]->len=MIN(G.syn->seq[_isel]->len+1, SEQ_LEN);gup_seq=1;}
+			else astep( step_sel+1);
+			gup_step_bar=1;
+			if(step_sel<note_scrollh) note_scrollh_pos = step_sel;
+			if(step_sel>note_scrollh+15) note_scrollh_pos++;
+		}
+	}
+
+
+
+
 	gui_quit_dialog();
 	gui_save_dialog();
 
-	if(kbget(SDLK_RETURN)){ kbset(SDLK_RETURN,0);
-		if(G.syn->seq_play) syn_stop(G.syn);
-		else syn_pause(G.syn);
-	}
 }
 
 
