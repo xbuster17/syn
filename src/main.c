@@ -864,7 +864,8 @@ void main_loop(void){
 		pstep = step;
 			//active step
 		step=G.syn->seq[_isel]->step;
-		if(follow) astep(step);
+		// if(follow) astep(step);
+		if(follow) astep(round(G.syn->seq[_isel]->time - .25));
 
 		sg_show();
 
@@ -1887,8 +1888,13 @@ void key_update(int key, char on){
 		commit_step_end = step_sel;
 		if(commit_step_begin != commit_step_end){
 			int tmp=MIN(commit_step_begin, commit_step_end);
-			commit_step_end=MAX(commit_step_end, commit_step_begin);
-			commit_step_begin=MIN(commit_step_begin, tmp);
+			if(!follow){
+				commit_step_end=MAX(commit_step_end, commit_step_begin);
+				commit_step_begin=MIN(commit_step_begin, tmp);
+			} else {
+				if( commit_step_end < commit_step_begin )
+					commit_step_end = G.syn->seq[_isel]->len-1;
+			}
 			for(int s=commit_step_begin; s<=commit_step_end; s++){
 				seq_anof(G.syn->seq[_isel], s);
 				note_cols[_isel][s]=0;
@@ -1907,7 +1913,7 @@ void key_update(int key, char on){
 			}
 		}
 		note_cols[_isel][step_sel] = CLAMP(note_cols[_isel][step_sel], 0, POLYPHONY);
-		astep(step_sel + step_add);
+		if(!follow) astep(step_sel + step_add);
 		commit_count=0;
 		gup_seq=1;
 		gup_shown_notes=1;
@@ -1918,6 +1924,7 @@ void key_update(int key, char on){
 	syn_lock(G.syn, 0);
 
 }
+
 
 int kb_octave(int o){
 	int prev_oct = octave;
@@ -2525,7 +2532,7 @@ int filt_gridy = 0;
 			mlatch=&G.syn->tone[_isel]->pitch_env_amt;
 			mlatch_min= SYN_MIN_PITCH_ENV_AMT;
 			mlatch_max= -SYN_MIN_PITCH_ENV_AMT;
-			mlatch_factor= 0.05;
+			mlatch_factor= 0.1;
 			mlatch_v=1;
 			mlatch_adsr_pitch=1;
 		}
